@@ -1,8 +1,9 @@
 [project]
 name = "facet"
 version = "0.1.0"
-description = "Facet — 信息提取 → 认知模型 → 投资工具"
-requires-python = ">=3.11"
+description = "Facet — 信息提取 → 认知模型 → 量化投资"
+requires-python = ">=3.12"
+license = "MIT"
 
 [tool.uv.workspace]
 members = ["anchor", "axion", "polaris"]

@@ -8,7 +8,7 @@ version = "7.0.0"
 description = "理解模型 — 多模式信息提取与事实验证引擎"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 authors = [{ name = "jinozaki" }]
 
 dependencies = [
@@ -72,5 +72,5 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py312"
 line-length = 120

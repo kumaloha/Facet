@@ -1,0 +1,25 @@
+[project]
+name = "polaris"
+version = "0.1.0"
+description = "认知模型：输入特征，输出多维度评分"
+requires-python = ">=3.12"
+dependencies = [
+    "pandas>=2.0",
+    "pydantic-settings>=2.0",
+    "sqlalchemy>=2.0",
+    "click>=8.0",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+pg = ["psycopg2-binary>=2.9"]
+
+[project.scripts]
+polaris = "polaris.cli:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["polaris"]
