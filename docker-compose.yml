@@ -1,0 +1,9 @@
+services:
+  facet:
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///./data/facet.db
+      - ANCHOR_DB_URL=sqlite:///./data/facet.db
