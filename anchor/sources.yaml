@@ -1,0 +1,890 @@
+# Anchor 信息源总表
+# ═════════════════════════════════════════════════════════════════════════════
+# 三大类：
+#   primary_sources  — 一手信息源（政府/央行/交易所/SEC/学术原文等权威原始数据）
+#   authors          — 第三方分析人物（KOL/经济学家/基金经理，按 tier 分级）
+#   channels         — 第三方分析机构频道（智库/国际组织 RSS 等，无特定作者）
+#
+# 字段说明：
+#   tier: 1 = 顶级权威（手握货币权/行政权/AUM>1000亿）, 2 = 行业专家
+#   accessible: true = 系统可自动抓取, false = 需人工获取或付费墙
+#   domain: 政策 | 产业 | 公司 | 期货 | 技术（一手源的内容领域）
+#   frequency: daily | weekly | monthly | quarterly | yearly（发布频率）
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+# =============================================================================
+# PRIMARY SOURCES — 一手信息源（content_nature = 一手信息）
+# =============================================================================
+
+primary_sources:
+
+  # ── 政策 · 一手信息 ─────────────────────────────────────────────────────────
+
+  - name: 美联储 FOMC 声明与会议纪要
+    domain: 政策
+    institution: Federal Reserve
+    frequency: 6w
+    sources:
+      - url: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
+        accessible: true
+        note: FOMC 会议日历，含声明、纪要、经济预测
+
+  - name: 美联储国会证词
+    domain: 政策
+    institution: Federal Reserve
+    frequency: quarterly
+    sources:
+      - url: https://www.federalreserve.gov/newsevents/testimony.htm
+        accessible: true
+
+  - name: ECB 利率决议与声明
+    domain: 政策
+    institution: European Central Bank
+    frequency: 6w
+    sources:
+      - url: https://www.ecb.europa.eu/press/govcdec/mopo/html/index.en.html
+        accessible: true
+
+  - name: 日本银行金融政策决定
+    domain: 政策
+    institution: Bank of Japan
+    frequency: monthly
+    sources:
+      - url: https://www.boj.or.jp/en/mopo/mpmdeci/index.htm
+        accessible: true
+
+  - name: 中国人民银行货币政策
+    domain: 政策
+    institution: 中国人民银行
+    frequency: quarterly
+    sources:
+      - url: http://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/index.html
+        accessible: true
+        note: 货币政策执行报告（季度）
+
+  - name: 中国政府工作报告
+    domain: 政策
+    institution: 国务院
+    frequency: yearly
+    sources:
+      - url: https://npcobserver.com/legislation/government-work-reports/
+        accessible: true
+        note: NPC Observer 英文翻译版，年度发布
+
+  - name: 美国联邦预算案
+    domain: 政策
+    institution: OMB / White House
+    frequency: yearly
+    sources:
+      - url: https://www.govinfo.gov/app/collection/budget
+        accessible: true
+
+  - name: 美国行政令
+    domain: 政策
+    institution: White House
+    frequency: weekly
+    sources:
+      - url: https://www.whitehouse.gov/presidential-actions/
+        accessible: true
+        crawl_depth: 1
+
+  # ── 期货/宏观 · 一手信息 ───────────────────────────────────────────────────
+
+  - name: EIA 短期能源展望 (STEO)
+    domain: 期货
+    institution: U.S. Energy Information Administration
+    frequency: monthly
+    sources:
+      - url: https://www.eia.gov/outlooks/steo/
+        accessible: true
+
+  - name: BLS 就业形势报告（非农）
+    domain: 期货
+    institution: Bureau of Labor Statistics
+    frequency: monthly
+    sources:
+      - url: https://www.bls.gov/news.release/empsit.nr0.htm
+        accessible: true
+
+  - name: BLS CPI 报告
+    domain: 期货
+    institution: Bureau of Labor Statistics
+    frequency: monthly
+    sources:
+      - url: https://www.bls.gov/news.release/cpi.nr0.htm
+        accessible: true
+
+  - name: ISM 制造业 PMI
+    domain: 期货
+    institution: Institute for Supply Management
+    frequency: monthly
+    sources:
+      - url: https://www.ismworld.org/supply-management-news-and-reports/reports/ism-report-on-business/
+        accessible: true
+
+  - name: CFTC COT 报告
+    domain: 期货
+    institution: Commodity Futures Trading Commission
+    frequency: weekly
+    sources:
+      - url: https://www.cftc.gov/dea/futures/deacmelf.htm
+        accessible: true
+
+  - name: 中国 NBS 月度经济数据
+    domain: 期货
+    institution: 国家统计局
+    frequency: monthly
+    sources:
+      - url: https://www.stats.gov.cn/english/PressRelease/
+        accessible: true
+
+  # ── 公司 · 一手信息（SEC 财报）─────────────────────────────────────────────
+
+  - name: SEC EDGAR Full-Text Search
+    domain: 公司
+    institution: U.S. Securities and Exchange Commission
+    frequency: daily
+    sources:
+      - url: https://efts.sec.gov/LATEST/search-index?q=%2210-K%22&dateRange=custom&startdt=2026-01-01
+        accessible: true
+        note: 可通过 EDGAR API 按公司/类型检索 10-K/10-Q/8-K
+
+  # ── 技术 · 一手信息（学术论文）─────────────────────────────────────────────
+
+  - name: arXiv cs.AI 最新论文
+    domain: 技术
+    institution: arXiv (Cornell University)
+    frequency: daily
+    sources:
+      - platform: RSS
+        url: https://rss.arxiv.org/rss/cs.AI
+        accessible: true
+
+  - name: arXiv cs.CL (NLP) 最新论文
+    domain: 技术
+    institution: arXiv (Cornell University)
+    frequency: daily
+    sources:
+      - platform: RSS
+        url: https://rss.arxiv.org/rss/cs.CL
+        accessible: true
+
+  # ── 产业 · 一手信息 ─────────────────────────────────────────────────────────
+
+  - name: Gartner 行业报告（公开摘要）
+    domain: 产业
+    institution: Gartner
+    frequency: quarterly
+    sources:
+      - url: https://www.gartner.com/en/articles
+        accessible: true
+        note: 完整报告付费，公开摘要可抓取
+
+  - name: SEMI 全球半导体设备出货统计
+    domain: 产业
+    institution: SEMI
+    frequency: quarterly
+    sources:
+      - url: https://www.semi.org/en/news-media-press
+        accessible: true
+
+
+# =============================================================================
+# AUTHORS — 第三方分析人物（content_nature = 第三方分析）
+# =============================================================================
+
+authors:
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # TIER 1 — 顶级权威
+  # 准入：手握货币权 / 行政权 / AUM > 1000 亿美元
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # ── 全球金融巨头 (Fund Titans) ────────────────────────────────────────────
+
+  - name: Larry Fink
+    institution: 贝莱德 (BlackRock) 创始人 / CEO
+    tier: 1
+    category: fund_titan
+    sources:
+      - platform: BlackRock 年度股东信
+        url: https://www.blackrock.com/corporate/investor-relations/larry-fink-annual-chairmans-letter
+        accessible: true
+      - platform: LinkedIn
+        url: https://www.linkedin.com/in/larry-fink-3b35b/
+        accessible: true
+
+  - name: Warren Buffett
+    institution: 伯克希尔·哈撒韦 (Berkshire Hathaway) 创始人 / CEO
+    tier: 1
+    category: fund_titan
+    sources:
+      - platform: 年度股东信 (每年 2 月)
+        url: https://www.berkshirehathaway.com/letters/letters.html
+        accessible: true
+
+  - name: Ray Dalio
+    institution: 桥水基金 (Bridgewater Associates) 创始人
+    tier: 1
+    category: fund_titan
+    sources:
+      - platform: LinkedIn Pulse
+        url: https://www.linkedin.com/today/author/raydalio
+        accessible: true
+      - platform: Twitter/X
+        url: https://x.com/RayDalio
+        accessible: true
+      - platform: Bridgewater 研究洞察 (机构付费)
+        url: https://www.bridgewater.com/research-and-insights/
+        accessible: true
+
+  - name: Steve Schwarzman
+    institution: 黑石集团 (Blackstone) 联合创始人 / CEO
+    tier: 1
+    category: fund_titan
+    sources:
+      - platform: Blackstone Insights
+        url: https://www.blackstone.com/insights/
+        accessible: true
+      - platform: LinkedIn
+        url: https://www.linkedin.com/in/steve-schwarzman/
+        accessible: true
+
+  - name: Salim Ramji
+    institution: 先锋领航 (Vanguard) CEO
+    tier: 1
+    category: fund_titan
+    sources:
+      - platform: Vanguard Investing Insights
+        url: https://corporate.vanguard.com/content/corporatesite/us/en/corp/what-we-think/investing-insights/index.html
+        accessible: true
+        crawl_depth: 1
+        note: JS渲染目录页，generic fetch仅提取4条导航链接；需 Jina Reader
+
+  - name: Ronald O'Hanley
+    institution: 道富集团 (State Street) 董事长 / CEO
+    tier: 1
+    category: fund_titan
+    sources:
+      - platform: State Street Global Advisors Insights
+        url: https://www.ssga.com/us/en/institutional/ic/insights
+        accessible: true
+        crawl_depth: 1
+        note: JS渲染目录页，generic fetch仅提取1条链接；需 Jina Reader
+
+  - name: Nir Bar Dea
+    institution: 桥水基金 (Bridgewater Associates) CEO
+    tier: 1
+    category: fund_titan
+    sources:
+      - platform: Bridgewater 官网
+        url: https://www.bridgewater.com/research-and-insights/
+        accessible: true
+      - platform: LinkedIn
+        url: https://www.linkedin.com/in/nirbd/
+        accessible: true
+
+  # ── 央行行长 & 多边组织首脑 (Central Bankers & IMF/BIS) ──────────────────
+
+  - name: Jerome Powell
+    institution: 美联储 (Federal Reserve) 主席
+    tier: 1
+    category: central_banker
+    sources:
+      - platform: RSS（联邦储备委员会演讲，已验证）
+        url: https://www.federalreserve.gov/feeds/speeches.xml
+        accessible: true
+      - platform: FOMC 新闻发布会
+        url: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
+        accessible: true
+
+  - name: Christine Lagarde
+    institution: 欧洲央行 (ECB) 行长
+    tier: 1
+    category: central_banker
+    sources:
+      - platform: RSS（ECB 新闻发布，已验证）
+        url: https://www.ecb.europa.eu/rss/press.html
+        accessible: true
+
+  - name: 潘功胜 (Pan Gongsheng)
+    institution: 中国人民银行 行长
+    tier: 1
+    category: central_banker
+    sources:
+      - platform: 央行官网行领导发言
+        url: http://www.pbc.gov.cn/goutongjiaoliu/113456/index.html
+        accessible: true
+
+  - name: 植田和男 (Kazuo Ueda)
+    institution: 日本银行 (BOJ) 总裁
+    tier: 1
+    category: central_banker
+    sources:
+      - platform: RSS（BOJ What's New）
+        url: https://www.boj.or.jp/en/rss/whatsnew.xml
+        accessible: true
+
+  - name: Kristalina Georgieva
+    institution: 国际货币基金组织 (IMF) 总裁
+    tier: 1
+    category: central_banker
+    sources:
+      - platform: IMF Blog
+        url: https://www.imf.org/en/Blogs
+        accessible: true
+      - platform: IMF 演讲
+        url: https://www.imf.org/en/News/Articles
+        accessible: false
+
+  - name: Agustín Carstens
+    institution: 国际清算银行 (BIS) 总经理
+    tier: 1
+    category: central_banker
+    sources:
+      - platform: RSS（BIS 管理层演讲，已验证）
+        url: https://www.bis.org/doclist/mgmtspeeches.rss
+        accessible: true
+
+  - name: Andrew Bailey
+    institution: 英国央行 (BOE) 行长
+    tier: 1
+    category: central_banker
+    sources:
+      - platform: RSS（BOE 演讲，已验证）
+        url: https://www.bankofengland.co.uk/rss/speeches
+        accessible: true
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # TIER 2 — 行业专家
+  # 准入：诺贝尔奖 / 顶级基金经理 / 首席经济学家 / 顶尖学术权威
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # ── 诺贝尔经济学奖得主 (Nobel Laureates) ─────────────────────────────────
+
+  - name: Philippe Aghion
+    institution: 法兰西公学院 教授 (2025 诺贝尔经济学奖得主，创造性破坏理论)
+    tier: 2
+    category: nobel_laureate
+    sources:
+      - platform: Project Syndicate 全站 RSS（按作者过滤）
+        url: https://www.project-syndicate.org/rss
+        accessible: true
+
+  - name: Daron Acemoglu
+    institution: MIT 经济学教授 (2024 诺贝尔经济学奖得主，制度与繁荣)
+    tier: 2
+    category: nobel_laureate
+    sources:
+      - platform: Project Syndicate
+        url: https://www.project-syndicate.org/columnist/daron-acemoglu
+        accessible: false
+      - platform: NBER Working Papers
+        url: https://www.nber.org/people/daron_acemoglu
+        accessible: true
+        crawl_depth: 1
+
+  - name: Ben Bernanke
+    institution: 布鲁金斯学会 (Brookings) 高级研究员 / 前美联储主席 (2022 诺贝尔奖)
+    tier: 2
+    category: nobel_laureate
+    sources:
+      - platform: Brookings Institution
+        url: https://www.brookings.edu/centers/the-hutchins-center-on-fiscal-and-monetary-policy/
+        accessible: true
+        crawl_depth: 1
+        note: 专家页为JS渲染（不可爬），改为Hutchins Center静态列表页
+
+  - name: Paul Krugman
+    institution: 纽约城市大学 教授 / 前普林斯顿 (2008 诺贝尔奖)
+    tier: 2
+    category: nobel_laureate
+    sources:
+      - platform: Substack
+        url: https://paulkrugman.substack.com/
+        accessible: true
+      - platform: Project Syndicate
+        url: https://www.project-syndicate.org/columnist/paul-krugman
+        accessible: false
+
+  - name: Robert Shiller
+    institution: 耶鲁大学 经济学教授 (2013 诺贝尔奖，资产价格泡沫)
+    tier: 2
+    category: nobel_laureate
+    sources:
+      - platform: Project Syndicate 全站 RSS（按作者过滤）
+        url: https://www.project-syndicate.org/rss
+        accessible: true
+
+  # ── 顶级宏观对冲基金经理 (Macro Fund Managers) ───────────────────────────
+
+  - name: Howard Marks
+    institution: Oaktree Capital Management 联合创始人 (AUM ~$190B)
+    tier: 2
+    category: hedge_fund
+    sources:
+      - platform: Oaktree Capital Memos
+        url: https://www.oaktreecapital.com/insights/memos
+        accessible: true
+        crawl_depth: 1
+        note: Howard Marks 备忘录目录页；需 Jina+LLM 分类
+
+  - name: Bill Ackman
+    institution: Pershing Square Capital Management CEO
+    tier: 2
+    category: hedge_fund
+    sources:
+      - platform: Twitter/X
+        url: https://x.com/BillAckman
+        accessible: true
+      - platform: Pershing Square 官网动态
+        url: https://pershingsquareholdings.com/
+        accessible: true
+
+  - name: Jeffrey Gundlach
+    institution: DoubleLine Capital CEO / CIO ("债券之王")
+    tier: 2
+    category: hedge_fund
+    sources:
+      - platform: DoubleLine 市场观点
+        url: https://doubleline.com/markets-insights/
+        accessible: true
+      - platform: DoubleLine 网络研讨会
+        url: https://doubleline.com/doubleline-webcasts/
+        accessible: true
+      - platform: Twitter/X
+        url: https://x.com/TruthGundlach
+        accessible: true
+
+  - name: Ken Griffin
+    institution: Citadel 创始人 / CEO
+    tier: 2
+    category: hedge_fund
+    sources:
+      - platform: Milken Institute YouTube
+        url: https://www.youtube.com/@MilkenInstitute
+        accessible: true
+
+  - name: George Soros
+    institution: 索罗斯基金管理 (Soros Fund Management) 创始人
+    tier: 2
+    category: hedge_fund
+    sources:
+      - platform: Project Syndicate
+        url: https://www.project-syndicate.org/columnist/george-soros
+        accessible: false
+      - platform: Open Society Foundations 文章
+        url: https://www.opensocietyfoundations.org/voices
+        accessible: true
+
+  - name: Bill Gross
+    institution: PIMCO 联合创始人 (已退休，"债券之王"原版)
+    tier: 2
+    category: hedge_fund
+    sources:
+      - platform: Twitter/X
+        url: https://x.com/Bill_Gross
+        accessible: true
+
+  # ── 顶级机构首席经济学家 (Chief Economists) ──────────────────────────────
+
+  - name: Jan Hatzius
+    institution: 高盛 (Goldman Sachs) 首席经济学家
+    tier: 2
+    category: chief_economist
+    sources:
+      - platform: YouTube
+        url: https://www.youtube.com/playlist?list=PLIyiGQywEp66lKvfhiDbiuZnCboYneuX2
+        accessible: true
+        note: Exchanges at Goldman Sachs 专属播放列表（intelligence/页面JS渲染不可爬）
+
+  - name: Seth Carpenter
+    institution: 摩根士丹利 (Morgan Stanley) 首席经济学家
+    tier: 2
+    category: chief_economist
+    sources:
+      - platform: Morgan Stanley Thoughts on the Market (Podcast)
+        url: https://www.morganstanley.com/insights/podcasts/thoughts-on-the-market
+        accessible: true
+
+  - name: Pierre-Olivier Gourinchas
+    institution: IMF 首席经济学家
+    tier: 2
+    category: chief_economist
+    sources:
+      - platform: IMF World Economic Outlook (WEO)
+        url: https://www.imf.org/en/Publications/WEO
+        accessible: true
+      - platform: IMF Blog
+        url: https://www.imf.org/en/Blogs
+        accessible: true
+
+  - name: Mohamed El-Erian
+    institution: 剑桥皇后学院院长 / 安联 (Allianz) 首席经济顾问 / 前 PIMCO CEO
+    tier: 2
+    category: chief_economist
+    sources:
+      - platform: Project Syndicate 全站 RSS（按作者过滤）
+        url: https://www.project-syndicate.org/rss
+        accessible: true
+
+  - name: Larry Summers
+    institution: 哈佛大学 经济学教授 / 前美国财长
+    tier: 2
+    category: chief_economist
+    sources:
+      - platform: Twitter/X
+        url: https://x.com/LHSummers
+        accessible: true
+      - platform: Bloomberg Opinion
+        url: https://www.bloomberg.com/opinion/authors/AP3LSFKPFRA/lawrence-h-summers
+        accessible: false
+      - platform: Project Syndicate
+        url: https://www.project-syndicate.org/columnist/lawrence-h-summers
+        accessible: false
+
+  - name: Nouriel Roubini
+    institution: Atlas Capital Team CEO / 纽约大学教授 ("末日博士")
+    tier: 2
+    category: chief_economist
+    sources:
+      - platform: Project Syndicate
+        url: https://www.project-syndicate.org/columnist/nouriel-roubini
+        accessible: false
+      - platform: Substack
+        url: https://roubini.substack.com/
+        accessible: true
+
+  - name: Jeffrey Sachs
+    institution: 哥伦比亚大学地球研究所主任 / 联合国顾问
+    tier: 2
+    category: chief_economist
+    sources:
+      - platform: Project Syndicate
+        url: https://www.project-syndicate.org/columnist/jeffrey-d-sachs
+        accessible: false
+      - platform: Substack
+        url: https://jeffsachs.substack.com/
+        accessible: true
+
+  - name: Adam Posen
+    institution: 彼得森国际经济研究所 (PIIE) 主席
+    tier: 2
+    category: chief_economist
+    sources:
+      - platform: PIIE Update RSS
+        url: https://www.piie.com/rss/update.xml
+        accessible: true
+
+  - name: Robin Brooks
+    institution: 布鲁金斯学会高级研究员 / 前高盛 FX 策略主管 / 前 IIF 首席经济学家
+    tier: 2
+    category: chief_economist
+    sources:
+      - platform: Substack
+        url: https://robinjbrooks.substack.com/
+        accessible: true
+      - platform: Twitter/X
+        url: https://x.com/robin_j_brooks
+        accessible: true
+
+  # ── 中文圈深度视角 (China Context) ──────────────────────────────────────
+
+  - name: 洪灝 (Hong Hao)
+    institution: 华富证券国际部 CEO / 前 GROW Investment Group 首席经济学家
+    tier: 2
+    category: china_analyst
+    sources:
+      - platform: Twitter/X
+        url: https://x.com/HAOHONG_CFA
+        accessible: true
+      - platform: Caixin Global Opinion
+        url: https://www.caixinglobal.com/hong-hao/
+        accessible: true
+
+  - name: 高善文 (Gao Shanwen)
+    institution: 安信证券首席经济学家
+    tier: 2
+    category: china_analyst
+    sources:
+      - platform: 安信证券研究报告 (通过媒体转载)
+        url: https://weibo.com/u/1728715190
+        accessible: false
+        note: 正式报告需券商渠道；演讲内容常由雪球/微博转载
+
+  - name: 陶冬 (Tao Dong)
+    institution: 前瑞信 (Credit Suisse) 亚洲区首席经济学家
+    tier: 2
+    category: china_analyst
+    sources:
+      - platform: 微博
+        url: https://weibo.com/1182426800
+        accessible: true
+
+  - name: 付鹏 (Fu Peng)
+    institution: 东北证券首席经济学家
+    tier: 2
+    category: china_analyst
+    sources:
+      - platform: YouTube「付鹏的财经世界」
+        url: https://www.youtube.com/@%E4%BB%98%E9%B9%8F%E7%9A%84%E8%B4%A2%E7%BB%8F%E4%B8%96%E7%95%8C
+        accessible: true
+
+  - name: 翟东升 (Zhai Dongsheng)
+    institution: 中国人民大学国际关系学院教授
+    tier: 2
+    category: china_analyst
+    sources:
+      - platform: Bilibili
+        url: https://space.bilibili.com/596299260
+        accessible: true
+
+  # ── 新补充：美国首席经济学家 ──────────────────────────────────────────────
+
+  - name: Michael Cembalest
+    institution: 摩根大通资管 (JPMorgan Asset Management) 首席投资策略师
+    tier: 1
+    category: chief_economist
+    sources:
+      - platform: Eye on the Market (PDF，需登录)
+        url: https://am.jpmorgan.com/us/en/asset-management/liq/insights/market-insights/eye-on-the-market/
+        accessible: true
+        note: 官方链接已迁移；该页面可抓取公开摘要/相关市场洞察
+
+  - name: Torsten Slok
+    institution: 阿波罗资管 (Apollo Global Management) 首席经济学家
+    tier: 1
+    category: chief_economist
+    sources:
+      - platform: Apollo Academy (免费注册)
+        url: https://www.apolloacademy.com/
+        accessible: true
+        note: 每日图表 + 每周宏观简报，免费注册后可查阅
+
+  - name: Jean Boivin
+    institution: 贝莱德投资研究所 (BlackRock Investment Institute) 所长
+    tier: 1
+    category: chief_economist
+    sources:
+      - platform: BlackRock Investment Institute
+        url: https://www.blackrock.com/corporate/insights/blackrock-investment-institute
+        accessible: true
+        crawl_depth: 1
+        note: generic fetch提取全站导航(UK Gender Pay等)而非研究报告；需 Jina+LLM 分类
+
+  - name: Joseph Stiglitz
+    institution: 哥伦比亚大学经济学教授 (诺贝尔经济学奖 2001)
+    tier: 1
+    category: academic
+    sources:
+      - platform: Project Syndicate 全站 RSS（按作者过滤）
+        url: https://www.project-syndicate.org/rss
+        accessible: true
+
+  # ── 新补充：日本权威 ──────────────────────────────────────────────────────
+
+  - name: 辜朝明 (Richard Koo)
+    institution: 野村综合研究所 (Nomura Research Institute) 首席经济学家
+    tier: 1
+    category: academic
+    sources:
+      - platform: 野村综合研究所评论 (NRI)
+        url: https://www.nri.com/en/knowledge/report
+        accessible: true
+        crawl_depth: 1
+        note: 提出"资产负债表衰退"理论；generic fetch提取旧/无关链接，需 Jina+LLM 分类
+      - platform: NRI Publications (目录页)
+        url: https://www.nri.com/en/knowledge/publications.html
+        accessible: true
+        crawl_depth: 1
+        note: lakyara月刊 + Asset Management年报 + Special Reports；目录页需 Jina+LLM 分类
+
+  - name: 後藤達也 (Tatsuya Goto)
+    institution: 前日本经济新闻资深记者 / 独立金融评论员
+    tier: 2
+    category: japan_analyst
+    sources:
+      - platform: RSS（note.com，每日市场分析，日文）
+        url: https://note.com/goto_finance/rss
+        accessible: false
+        note: 文章为付费全文，免费部分无法获取完整内容
+
+  # ── 新补充：中国政策圈 ────────────────────────────────────────────────────
+
+  - name: 任泽平 (Ren Zeping)
+    institution: 泽平宏观创始人 / 前恒大、方正证券首席经济学家
+    tier: 2
+    category: china_analyst
+    sources:
+      - platform: 微信公众号「泽平宏观」(通过转载)
+        url: https://weibo.com/renzeping
+        accessible: false
+        note: 正式报告首发于微信公众号，微博有部分转发
+
+  - name: 彭文生 (Peng Wensheng)
+    institution: 中金公司 (CICC) 首席经济学家
+    tier: 1
+    category: china_analyst
+    sources:
+      - platform: 中金研究 (需登录)
+        url: https://www.cicc.com/zh-CN/research
+        accessible: false
+        note: 报告需中金账户；演讲摘要常由财联社/21世纪经济报道转载
+
+
+# =============================================================================
+# CHANNELS — 机构 RSS 频道（无特定作者，按机构订阅）
+# =============================================================================
+
+channels:
+
+  # ── 国际组织 ─────────────────────────────────────────────────────────────
+
+  - name: IMF Blog (全站 RSS)
+    institution: 国际货币基金组织
+    tier: 1
+    platform: RSS
+    url: https://www.imf.org/en/Blogs
+    accessible: true
+    note: 官方 RSS 已失效；改为列表页抓取（HTML fallback）
+
+  - name: BIS Central Bank Speeches
+    institution: 国际清算银行
+    tier: 1
+    platform: RSS
+    url: https://www.bis.org/doclist/cbspeeches.rss
+    accessible: true
+    note: RDF RSS 1.0 格式；已验证，25 条目；涵盖全球主要央行演讲
+
+  - name: BIS Research Papers
+    institution: 国际清算银行
+    tier: 1
+    platform: RSS
+    url: https://www.bis.org/doclist/reshub_papers.rss
+    accessible: true
+    note: BIS Research Hub 工作论文；已验证，25 条目
+
+  - name: World Bank Blogs (Economics)
+    institution: 世界银行
+    tier: 1
+    platform: RSS
+    url: https://blogs.worldbank.org/en/home
+    accessible: true
+    note: 经济学 RSS 已失效；改为博客首页列表页抓取（HTML fallback）
+
+  - name: OECD ECOSCOPE (Economics Blog)
+    institution: 经合组织
+    tier: 1
+    platform: RSS
+    url: https://oecdecoscope.blog/feed/
+    accessible: true
+    note: OECD 经济学家 WordPress 博客，已验证，10 条目
+
+  - name: G30 Reports
+    institution: 三十人小组 (Group of Thirty)
+    tier: 1
+    platform: generic
+    url: https://group30.org/publications
+    accessible: true
+    crawl_depth: 1
+    note: 无 RSS；generic fetch提取表格标题而非报告链接；需 Jina+LLM 分类
+
+  # ── 金融机构 Podcast RSS ──────────────────────────────────────────────────
+
+  - name: Goldman Sachs Talks at GS
+    institution: 高盛
+    tier: 2
+    platform: YouTube
+    url: https://www.youtube.com/playlist?list=PLIyiGQywEp64t14dcTeMLe0mX5KoWHOFX
+    accessible: true
+    note: talks-at-gs页面JS渲染不可爬；改用YouTube Talks at GS专属播放列表
+
+  # ── 美国智库与学术机构 ───────────────────────────────────────────────────
+
+  - name: Project Syndicate (Economics 全站)
+    institution: 全球顶级经济学家专栏聚合
+    tier: 1
+    platform: RSS
+    url: https://www.project-syndicate.org/rss
+    accessible: true
+    note: 覆盖诺奖得主、前元首、央行行长投稿；个人专栏已单独订阅（验证可用）
+
+  - name: Brookings Institution (Economics)
+    institution: 布鲁金斯学会
+    tier: 1
+    platform: web
+    url: https://www.brookings.edu/centers/the-hutchins-center-on-fiscal-and-monetary-policy/
+    accessible: true
+    crawl_depth: 1
+    note: RSS跳转首页、topic页JS渲染均不可用；改为Hutchins Center静态页（每次约5条最新文章）
+
+  - name: NBER Working Papers
+    institution: 美国国家经济研究局
+    tier: 1
+    platform: RSS
+    url: https://www.nber.org/rss/new.xml
+    accessible: true
+    note: 已验证，27 条目；RSS 2.0 格式
+
+  - name: Hoover Institution (Economics)
+    institution: 斯坦福大学胡佛研究所
+    tier: 2
+    platform: RSS
+    url: https://www.hoover.org/feed
+    accessible: true
+    note: 已验证，10 条目；RSS 2.0 格式
+
+  - name: PIIE (Peterson Institute for International Economics)
+    institution: 彼得森国际经济研究所
+    tier: 1
+    platform: RSS
+    url: https://www.piie.com/rss/update.xml
+    accessible: true
+    note: 已验证，10 条目；Peterson Institute Update
+
+  # ── 主要央行演讲 RSS（补充现有作者条目）────────────────────────────────
+
+  - name: Federal Reserve Speeches (全站)
+    institution: 美联储 (含全部理事会成员演讲)
+    tier: 1
+    platform: RSS
+    url: https://www.federalreserve.gov/feeds/speeches.xml
+    accessible: true
+    note: 已验证可用，15+ entries
+
+  - name: ECB Press Releases & Speeches
+    institution: 欧洲央行
+    tier: 1
+    platform: RSS
+    url: https://www.ecb.europa.eu/rss/press.html
+    accessible: true
+    note: 已验证可用，15+ entries
+
+  # ── 日本研究机构 ─────────────────────────────────────────────────────────
+
+  - name: RIETI Research (English)
+    institution: 日本经济产业研究所
+    tier: 2
+    platform: RSS
+    url: https://www.rieti.go.jp/rss/en/research.rss
+    accessible: true
+
+  # ── 中国 ─────────────────────────────────────────────────────────────────
+
+  - name: CF40 观察
+    institution: 中国金融四十人论坛 (周小川、易纲等前官员主导)
+    tier: 1
+    platform: generic
+    url: https://www.cf40.org.cn/achievement?page=1&cid=9999
+    accessible: true
+    crawl_depth: 1
+    note: 成果列表页，crawl_depth=1 自动提取文章链接
+
+  - name: 上海金融与发展实验室 (NIFD)
+    institution: 陆家嘴金融研究院
+    tier: 2
+    platform: generic
+    url: http://www.nifd.cn/Research
+    accessible: true
+    note: 通过 SeriesReportList API 直接解析文章列表

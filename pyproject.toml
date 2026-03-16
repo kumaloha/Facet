@@ -1,0 +1,8 @@
+[project]
+name = "facet"
+version = "0.1.0"
+description = "Facet — 信息提取 → 认知模型 → 投资工具"
+requires-python = ">=3.11"
+
+[tool.uv.workspace]
+members = ["anchor", "axion", "polaris"]
