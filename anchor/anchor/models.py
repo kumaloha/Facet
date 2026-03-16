@@ -1033,6 +1033,45 @@ class ManagementGuidance(SQLModel, table=True):
 
 
 # ===========================================================================
+# 因果模型 — 动态因果图（开放式认知）
+# ===========================================================================
+
+
+class CausalVariable(SQLModel, table=True):
+    """因果图节点 — 一个可观测或可推断的变量"""
+
+    __tablename__ = "causal_variables"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True, unique=True)       # 规范化名称 "tsmc_advanced_node_price"
+    domain: str                                       # company|industry|policy|cycle|geopolitics|capital|technology
+    description: str                                  # 人可读描述
+    observable: bool = False                          # 能否定量观测
+    data_source: Optional[str] = None                 # 观测数据来源（API / 表名）
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class CausalLink(SQLModel, table=True):
+    """因果图边 — 一条因果关系（最小模型单元）"""
+
+    __tablename__ = "causal_links"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    cause_id: int = Field(foreign_key="causal_variables.id", index=True)
+    effect_id: int = Field(foreign_key="causal_variables.id", index=True)
+    mechanism: str                                    # 因果机制描述
+    magnitude: Optional[str] = None                   # 量级估计 "涨价10% → 毛利损失2-3pp"
+    lag: Optional[str] = None                         # 时滞 "1-2季度"
+    conditions: Optional[str] = None                  # 边界条件
+    confidence: float = Field(default=0.5)            # 置信度 0-1，由预测准确率更新
+    raw_post_id: Optional[int] = Field(
+        default=None, foreign_key="raw_posts.id", index=True
+    )
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
+# ===========================================================================
 # 旧表 class 定义 — 注释掉，DB 中旧表数据保留只读
 # ===========================================================================
 # v8 通用提取表（已迁移到域专用管线）：
