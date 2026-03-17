@@ -59,7 +59,10 @@ _MAX_TOKENS = 16384
 # ── LLM 提示词 ──────────────────────────────────────────────────────────
 
 SYSTEM_COMPANY = """\
-你是一位资深基本面分析师。从公司财报/年报/Proxy Statement 中提取全部结构化信息。
+你是一位资深基本面分析师。从公司财报/年报/Proxy Statement 中提取**非财务结构化信息**。
+
+★ 重要：财务三表数据（利润表/资产负债表/现金流量表）由其他数据源提供，你**不需要提取**。
+★ 你的任务是提取三表以外的所有定性和半定量信息。
 
 ## 输出格式
 输出一个 JSON 对象。如果原文中没有某类信息，对应字段返回空数组 [] 或 null。
@@ -76,14 +79,6 @@ SYSTEM_COMPANY = """\
     "summary": "一句话商业模式"
   },
   "period": "FY2025 或 2025Q4",
-  "financial_statements": {
-    "currency": "USD",
-    "income": [
-      {"item_key": "revenue", "item_label": "原报表标签", "value": 数值, "note": null}
-    ],
-    "balance_sheet": [],
-    "cashflow": []
-  },
   "operational_issues": [
     {
       "topic": "议题名 ≤30字",
@@ -286,17 +281,6 @@ SYSTEM_COMPANY = """\
       "verbatim": "原文引用"
     }
   ],
-  "financial_line_items": [
-    {
-      "statement_type": "income|balance_sheet|cashflow",
-      "item_key": "标准化键（snake_case）如 revenue / gross_profit / total_assets / operating_cashflow",
-      "item_label": "原始标签",
-      "value": null,
-      "parent_key": null,
-      "ordinal": 0,
-      "note": null
-    }
-  ],
   "inventory_provisions": [
     {
       "provision_amount": null,
@@ -353,53 +337,6 @@ SYSTEM_COMPANY = """\
 }
 ```
 
-## 财务三表提取说明（最重要）
-financial_statements 提取三张财务报表的标准化科目。金额统一为百万美元（或百万本币）。
-使用以下标准 item_key（只提取原文中有数据的科目）：
-
-### 利润表 income
-| item_key | 含义 |
-|----------|------|
-| revenue | 营业收入/总收入 |
-| cost_of_revenue | 营业成本 |
-| gross_profit | 毛利润 |
-| operating_income | 营业利润 |
-| net_income | 净利润 |
-| interest_expense | 利息费用 |
-| sga_expense | 销售管理费用 |
-| rnd_expense | 研发费用 |
-| depreciation_amortization | 折旧摊销（如单独列示） |
-| eps_diluted | 稀释每股收益（单位：美元/股，非百万） |
-
-### 资产负债表 balance_sheet
-| item_key | 含义 |
-|----------|------|
-| total_assets | 总资产 |
-| current_assets | 流动资产 |
-| cash_and_equivalents | 现金及等价物 |
-| accounts_receivable | 应收账款 |
-| inventory | 存货 |
-| goodwill | 商誉 |
-| current_liabilities | 流动负债 |
-| total_debt | 总有息负债（短期+长期借款+债券） |
-| shareholders_equity | 股东权益 |
-
-### 现金流量表 cashflow
-| item_key | 含义 |
-|----------|------|
-| operating_cash_flow | 经营活动现金流 |
-| capital_expenditures | 资本开支（正数表示支出） |
-| depreciation_amortization | 折旧摊销 |
-| dividends_paid | 已付股利（正数表示支出） |
-| share_repurchase | 股票回购（正数表示支出） |
-| proceeds_from_stock_issuance | 股权融资收入 |
-| proceeds_from_debt_issuance | 新增借款收入 |
-| basic_weighted_average_shares | 基本加权平均股数（单位：百万股） |
-
-★ 金额全部用正数（支出也用正数），不要负号。
-★ 如果原文中某科目不存在，不要猜测，直接不输出。
-★ item_key 必须严格匹配上表，不要自创。
-
 ## 经营议题表说明（最重要）
 operational_issues 提取自 CEO致股东信、MD&A 等定性讨论段落。
 - 每行 = 一个经营议题（如"数据中心需求"、"供应链管理"、"中国市场出口管制"）
@@ -408,13 +345,6 @@ operational_issues 提取自 CEO致股东信、MD&A 等定性讨论段落。
 - risk: 该议题面临什么风险
 - guidance: 管理层对未来的展望/指引
 - 四个字段都是 Optional，没提到就留 null
-
-## 财务三表明细说明
-financial_line_items 提取自 income statement / balance sheet / cash flow statement。
-- statement_type 区分三张表：income / balance_sheet / cashflow
-- item_key 使用标准化 snake_case 键（如 revenue, cost_of_revenue, gross_profit, operating_income, net_income, total_assets, total_liabilities, operating_cashflow, capex, free_cashflow）
-- value 单位：百万美元（金额）或原始值（EPS、比率、股数）
-- ordinal 为报表中的排列顺序（从1开始）
 
 ## 新增提取类型说明
 - inventory_provisions: 库存减值/拨备，从 inventory note 或 COGS 明细提取
@@ -509,38 +439,64 @@ class CompanyComputeResult:
     data: CompanyExtractionResult | None = None
 
 
+def _dedup_by_key(existing: list, new_items: list, key_fn) -> list:
+    """按 key 函数去重，返回 new_items 中不重复的条目。"""
+    seen = {key_fn(item) for item in existing}
+    return [item for item in new_items if key_fn(item) not in seen]
+
+
 def _merge_extraction_results(
     base: CompanyExtractionResult,
     other: CompanyExtractionResult,
 ) -> CompanyExtractionResult:
-    """将 other 的提取结果合并到 base 中（追加列表字段）。"""
-    base.operational_issues.extend(other.operational_issues)
-    base.narratives.extend(other.narratives)
-    base.downstream_segments.extend(other.downstream_segments)
-    base.upstream_segments.extend(other.upstream_segments)
-    base.geographic_revenues.extend(other.geographic_revenues)
-    base.non_financial_kpis.extend(other.non_financial_kpis)
-    base.debt_obligations.extend(other.debt_obligations)
-    base.litigations.extend(other.litigations)
-    base.executive_compensations.extend(other.executive_compensations)
-    base.stock_ownership.extend(other.stock_ownership)
-    base.related_party_transactions.extend(other.related_party_transactions)
+    """将 other 的提取结果合并到 base 中（去重后追加）。"""
+    # 按主键去重的表
+    base.operational_issues.extend(
+        _dedup_by_key(base.operational_issues, other.operational_issues, lambda x: x.topic))
+    base.narratives.extend(
+        _dedup_by_key(base.narratives, other.narratives, lambda x: x.narrative[:80]))
+    base.downstream_segments.extend(
+        _dedup_by_key(base.downstream_segments, other.downstream_segments, lambda x: x.customer_name))
+    base.upstream_segments.extend(
+        _dedup_by_key(base.upstream_segments, other.upstream_segments, lambda x: x.supplier_name))
+    base.geographic_revenues.extend(
+        _dedup_by_key(base.geographic_revenues, other.geographic_revenues, lambda x: x.region))
+    base.non_financial_kpis.extend(
+        _dedup_by_key(base.non_financial_kpis, other.non_financial_kpis, lambda x: x.kpi_name))
+    base.debt_obligations.extend(
+        _dedup_by_key(base.debt_obligations, other.debt_obligations, lambda x: x.instrument_name))
+    base.litigations.extend(
+        _dedup_by_key(base.litigations, other.litigations, lambda x: x.case_name))
+    base.executive_compensations.extend(
+        _dedup_by_key(base.executive_compensations, other.executive_compensations, lambda x: x.name))
+    base.stock_ownership.extend(
+        _dedup_by_key(base.stock_ownership, other.stock_ownership, lambda x: x.name))
+    base.related_party_transactions.extend(
+        _dedup_by_key(base.related_party_transactions, other.related_party_transactions, lambda x: x.related_party))
+    base.competitor_relations.extend(
+        _dedup_by_key(base.competitor_relations, other.competitor_relations, lambda x: x.competitor_name))
+    base.market_share_data.extend(
+        _dedup_by_key(base.market_share_data, other.market_share_data,
+                      lambda x: f"{x.company_or_competitor}_{x.market_segment}"))
+    base.executive_changes.extend(
+        _dedup_by_key(base.executive_changes, other.executive_changes, lambda x: x.person_name))
+    base.management_guidance.extend(
+        _dedup_by_key(base.management_guidance, other.management_guidance, lambda x: x.metric))
+
+    # 无天然主键的表，直接追加
     base.pricing_actions.extend(other.pricing_actions)
-    base.competitor_relations.extend(other.competitor_relations)
-    base.market_share_data.extend(other.market_share_data)
     base.known_issues.extend(other.known_issues)
     base.management_acknowledgments.extend(other.management_acknowledgments)
-    base.executive_changes.extend(other.executive_changes)
-    base.management_guidance.extend(other.management_guidance)
-    if other.audit_opinion and not base.audit_opinion:
-        base.audit_opinion = other.audit_opinion
-    base.financial_line_items.extend(other.financial_line_items)
     base.inventory_provisions.extend(other.inventory_provisions)
     base.deferred_revenues.extend(other.deferred_revenues)
     base.revenue_recognition_policies.extend(other.revenue_recognition_policies)
     base.purchase_obligation_summaries.extend(other.purchase_obligation_summaries)
     base.asp_trends.extend(other.asp_trends)
     base.recurring_revenue_breakdowns.extend(other.recurring_revenue_breakdowns)
+
+    if other.audit_opinion and not base.audit_opinion:
+        base.audit_opinion = other.audit_opinion
+
     # 保留更长的摘要
     if other.summary and (not base.summary or len(other.summary) > len(base.summary)):
         base.summary = other.summary
