@@ -86,7 +86,33 @@ class Extractor:
                 fill_gaps=fill_gaps,
             )
 
-        # 其他域暂时禁用（不应走到这里，因为域开关已过滤）
+        if content_mode == "expert":
+            from anchor.extract.pipelines.causal import (
+                extract_causal_compute,
+                extract_causal_write,
+            )
+            # 获取已有变量名供 LLM 复用
+            from sqlmodel import select
+            from anchor.models import CausalVariable
+            existing_vars_result = await session.exec(select(CausalVariable.name))
+            existing_vars = list(existing_vars_result.all())
+
+            compute_result = await extract_causal_compute(
+                content=content,
+                existing_variables=existing_vars,
+            )
+            write_result = await extract_causal_write(raw_post, session, compute_result)
+
+            raw_post.is_processed = True
+            await session.commit()
+
+            return {
+                "is_relevant_content": compute_result.data is not None,
+                "skip_reason": compute_result.skip_reason,
+                **write_result,
+            }
+
+        # 其他域暂时禁用
         logger.warning(f"[Extractor] Domain '{content_mode}' has no pipeline, skipping")
         return {
             "is_relevant_content": False,

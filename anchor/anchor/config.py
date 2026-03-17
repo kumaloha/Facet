@@ -114,7 +114,7 @@ class Settings(BaseSettings):
         "industry": False,
         "technology": False,
         "futures": False,
-        "expert": False,
+        "expert": True,
     }
 
     def is_domain_enabled(self, domain: str) -> bool:
