@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     collector_interval_minutes: int = 60
     collector_max_results_per_query: int = 100
 
+    # LLM 提取并发控制（本地模型设 1，云端 API 可设 2-5）
+    extract_concurrency: int = 1
+
     # RSS — 空则使用内置列表
     rss_feeds: str = ""
 

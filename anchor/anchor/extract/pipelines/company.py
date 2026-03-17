@@ -660,7 +660,8 @@ async def extract_company_compute(
                 logger.info(f"[Company] Skipping topic '{t}' (tables already populated)")
 
             # 按 2 个一组并发
-            _CONCURRENCY = 2
+            from anchor.config import settings
+            _CONCURRENCY = settings.extract_concurrency
             merged: CompanyExtractionResult | None = None
             for batch_start in range(0, len(topics_to_run), _CONCURRENCY):
                 batch = topics_to_run[batch_start:batch_start + _CONCURRENCY]
