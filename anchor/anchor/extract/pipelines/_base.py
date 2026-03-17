@@ -50,16 +50,20 @@ async def call_llm_batch(
 
 def parse_json(raw: str, model_cls, step_name: str):
     """从 LLM 返回文本中提取 JSON 并解析为给定 Pydantic 模型。"""
-    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
-    json_str = match.group(1) if match else raw.strip()
+    json_str = raw.strip()
 
-    if not match:
-        start = json_str.find("{")
-        end = json_str.rfind("}") + 1
-        if start == -1 or end == 0:
-            logger.warning(f"{step_name}: no JSON found in output")
-            return None
-        json_str = json_str[start:end]
+    # 去掉 ```json ... ``` 包裹
+    if json_str.startswith("```"):
+        json_str = re.sub(r"^```\w*\n?", "", json_str)
+        json_str = re.sub(r"\n?```\s*$", "", json_str)
+
+    # 提取最外层 { ... }
+    start = json_str.find("{")
+    end = json_str.rfind("}") + 1
+    if start == -1 or end == 0:
+        logger.warning(f"{step_name}: no JSON found in output")
+        return None
+    json_str = json_str[start:end]
 
     try:
         data = json.loads(json_str)

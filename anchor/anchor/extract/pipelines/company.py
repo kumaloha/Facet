@@ -58,311 +58,118 @@ _MAX_TOKENS = 16384
 
 # ── LLM 提示词 ──────────────────────────────────────────────────────────
 
-SYSTEM_COMPANY = """\
-你是一位资深基本面分析师。从公司财报/年报/Proxy Statement 中提取**非财务结构化信息**。
+# ── 聚焦 prompt：每个 topic 只提取对应的数据类型 ─────────────────────
 
-★ 重要：财务三表数据（利润表/资产负债表/现金流量表）由其他数据源提供，你**不需要提取**。
-★ 你的任务是提取三表以外的所有定性和半定量信息。
+_PROMPT_HEADER = """\
+你是一位资深基本面分析师。从公司财报/年报中提取**非财务结构化信息**。
+★ 财务三表由其他数据源提供，你不需要提取。
+★ 只输出 JSON，无数据的字段返回空数组 [] 或 null。
+"""
 
-## 输出格式
-输出一个 JSON 对象。如果原文中没有某类信息，对应字段返回空数组 [] 或 null。
+_COMPANY_FIELDS = """\
+  "company": {"name": "公司全名", "ticker": "股票代码", "market": "us|cn_a|cn_h|hk|jp", "industry": "行业", "summary": "一句话商业模式"},
+  "period": "FY2025",
+"""
 
+SYSTEM_PROMPTS: dict[str, str] = {
+    # ── business topic: 经营 + 竞争 + 指引 ──
+    "business": _PROMPT_HEADER + """
+## 本次任务：提取经营议题、管理层叙事、竞争格局、前瞻指引
+
+输出 JSON：
 ```json
 {
   "is_relevant_content": true,
   "skip_reason": null,
-  "company": {
-    "name": "公司全名",
-    "ticker": "股票代码（如 NVDA / 600519.SH）",
-    "market": "us|cn_a|cn_h|hk|jp",
-    "industry": "所属行业",
-    "summary": "一句话商业模式"
-  },
-  "period": "FY2025 或 2025Q4",
+""" + _COMPANY_FIELDS + """
   "operational_issues": [
-    {
-      "topic": "议题名 ≤30字",
-      "performance": "表现（定性描述，不含财务数字）≤200字",
-      "attribution": "归因 ≤200字",
-      "risk": "风险 ≤200字",
-      "guidance": "指引 ≤200字"
-    }
+    {"topic": "议题名 ≤30字", "performance": "表现 ≤200字", "attribution": "归因 ≤200字", "risk": "风险 ≤200字", "guidance": "指引 ≤200字"}
   ],
   "narratives": [
-    {
-      "narrative": "管理层讲的故事/战略承诺 ≤300字",
-      "capital_required": null,
-      "capital_unit": null,
-      "promised_outcome": "承诺的结果 ≤200字",
-      "deadline": null
-    }
+    {"narrative": "战略承诺 ≤300字", "capital_required": null, "capital_unit": null, "promised_outcome": "承诺结果 ≤200字", "deadline": null}
   ],
   "downstream_segments": [
-    {
-      "segment": "业务分部名称（无则 null）",
-      "customer_name": "客户名或收入流名",
-      "customer_type": "direct|indirect|channel|OEM|distributor",
-      "products": "产品/服务",
-      "channels": "销售渠道",
-      "revenue": null,
-      "revenue_pct": null,
-      "growth_yoy": "同比增速",
-      "backlog": null,
-      "backlog_note": null,
-      "pricing_model": "per-unit|per-user/month|usage-based|混合",
-      "contract_duration": "one-time|1-year|multi-year",
-      "revenue_type": "product_sale|subscription|license|royalty|service|NRE|cloud_service",
-      "is_recurring": null,
-      "recognition_method": "point_in_time|over_time",
-      "contract_duration_months": null,
-      "switching_cost_level": "high|medium|low",
-      "description": "补充说明"
-    }
+    {"segment": null, "customer_name": "客户名", "customer_type": "direct|indirect|channel|OEM|distributor", "products": "产品", "channels": "渠道", "revenue": null, "revenue_pct": null, "growth_yoy": null, "backlog": null, "pricing_model": "per-unit|usage-based|混合", "contract_duration": "one-time|1-year|multi-year", "revenue_type": "product_sale|subscription|license", "is_recurring": null, "switching_cost_level": "high|medium|low", "description": null}
   ],
   "upstream_segments": [
-    {
-      "segment": "业务分部名称（无则 null）",
-      "supplier_name": "供应商名称",
-      "supply_type": "foundry|memory|assembly_test|substrate|component|contract_mfg|software|logistics",
-      "material_or_service": "供应内容",
-      "process_node": "制程节点（如适用）",
-      "geographic_location": "所在地",
-      "is_sole_source": false,
-      "purchase_obligation": null,
-      "lead_time": null,
-      "contract_type": null,
-      "prepaid_amount": null,
-      "concentration_risk": "集中度风险",
-      "description": "补充说明"
-    }
-  ],
-  "geographic_revenues": [
-    {
-      "region": "地域名称",
-      "revenue": null,
-      "revenue_share": null,
-      "growth_yoy": "增速",
-      "note": null
-    }
-  ],
-  "non_financial_kpis": [
-    {
-      "kpi_name": "指标名称",
-      "kpi_value": "值",
-      "kpi_unit": "单位",
-      "yoy_change": "变化",
-      "category": "workforce|customer|product|esg|operational",
-      "note": null
-    }
-  ],
-  "debt_obligations": [
-    {
-      "instrument_name": "债务工具名称",
-      "debt_type": "bond|loan|lease|convertible|credit_facility",
-      "principal": null,
-      "currency": "USD",
-      "interest_rate": null,
-      "maturity_date": null,
-      "is_secured": false,
-      "is_current": false,
-      "is_floating_rate": false,
-      "note": null
-    }
-  ],
-  "litigations": [
-    {
-      "case_name": "案件名称",
-      "case_type": "lawsuit|regulatory|patent|antitrust|environmental|tax|other",
-      "status": "pending|settled|dismissed|ongoing|appealed",
-      "counterparty": null,
-      "filed_at": null,
-      "claimed_amount": null,
-      "accrued_amount": null,
-      "currency": "USD",
-      "description": "案情摘要"
-    }
-  ],
-  "executive_compensations": [
-    {
-      "name": "姓名",
-      "title": "职位",
-      "role_type": "executive|director",
-      "base_salary": null,
-      "bonus": null,
-      "stock_awards": null,
-      "option_awards": null,
-      "non_equity_incentive": null,
-      "other_comp": null,
-      "total_comp": null,
-      "pay_ratio": null,
-      "median_employee_comp": null
-    }
-  ],
-  "stock_ownership": [
-    {
-      "name": "持有人",
-      "title": "职位",
-      "shares_beneficially_owned": null,
-      "percent_of_class": null
-    }
-  ],
-  "related_party_transactions": [
-    {
-      "related_party": "关联方名称",
-      "relationship": "director|officer|major_shareholder|subsidiary|affiliate|family",
-      "transaction_type": "sale|purchase|lease|loan|guarantee|service|license|other",
-      "amount": null,
-      "currency": "USD",
-      "terms": "交易条件",
-      "is_ongoing": false,
-      "description": "交易说明"
-    }
-  ],
-  "pricing_actions": [
-    {
-      "product_or_segment": "涉及的产品/业务线",
-      "price_change_pct": null,
-      "volume_impact_pct": null,
-      "effective_date": "YYYY-MM-DD"
-    }
+    {"segment": null, "supplier_name": "供应商", "supply_type": "foundry|memory|assembly_test|substrate|component|contract_mfg|software|logistics", "material_or_service": "供应内容", "geographic_location": "所在地", "is_sole_source": false, "purchase_obligation": null, "concentration_risk": null, "description": null}
   ],
   "competitor_relations": [
-    {
-      "competitor_name": "竞对公司名",
-      "market_segment": "竞争所在细分市场",
-      "relationship_type": "direct_competitor|indirect_competitor|potential_entrant"
-    }
+    {"competitor_name": "竞对名", "market_segment": "细分市场", "relationship_type": "direct_competitor|indirect_competitor|potential_entrant"}
   ],
   "market_share_data": [
-    {
-      "company_or_competitor": "公司或竞对名",
-      "market_segment": "细分市场",
-      "share_pct": null,
-      "source_description": "数据来源（如 IDC Q3 2025）"
-    }
+    {"company_or_competitor": "公司名", "market_segment": "细分市场", "share_pct": null, "source_description": "数据来源"}
+  ],
+  "management_guidance": [
+    {"target_period": "FY2026", "metric": "revenue_growth|operating_margin|eps|capex|roic_target|free_cash_flow|gross_margin|net_margin", "value_low": null, "value_high": null, "unit": "pct|absolute|per_share", "confidence_language": "expect|target|aspire", "verbatim": "原文引用"}
+  ],
+  "non_financial_kpis": [
+    {"kpi_name": "指标名", "kpi_value": "值", "kpi_unit": "单位", "yoy_change": null, "category": "workforce|customer|product|esg|operational"}
   ],
   "known_issues": [
-    {
-      "issue_description": "已知问题描述",
-      "issue_category": "financial|operational|legal|reputational|regulatory",
-      "severity": "critical|major|minor",
-      "source_type": "analyst_report|news|litigation|financial_anomaly"
-    }
-  ],
-  "management_acknowledgments": [
-    {
-      "issue_description": "管理层提及的问题",
-      "response_quality": "forthright|downplay|deflect|deny",
-      "has_action_plan": false
-    }
-  ],
-  "executive_changes": [
-    {
-      "person_name": "姓名",
-      "title": "职位",
-      "change_type": "joined|departed|promoted|demoted",
-      "change_date": "YYYY-MM-DD",
-      "reason": "原因（可空）"
-    }
-  ],
-  "audit_opinion": {
-    "opinion_type": "unqualified|qualified|adverse|disclaimer",
-    "auditor_name": "审计师事务所",
-    "emphasis_matters": "强调事项（可空）"
-  },
-  "management_guidance": [
-    {
-      "target_period": "FY2026",
-      "metric": "revenue_growth|operating_margin|eps|capex|roic_target|free_cash_flow|gross_margin|net_margin|tax_rate|share_repurchase|dividend|other",
-      "value_low": null,
-      "value_high": null,
-      "unit": "pct|absolute|per_share",
-      "confidence_language": "expect|target|aspire|preliminary",
-      "verbatim": "原文引用"
-    }
-  ],
-  "inventory_provisions": [
-    {
-      "provision_amount": null,
-      "provision_release": null,
-      "net_margin_impact_pct": null,
-      "note": null
-    }
-  ],
-  "deferred_revenues": [
-    {
-      "total_deferred": null,
-      "short_term": null,
-      "long_term": null,
-      "recognized_in_period": null,
-      "note": null
-    }
-  ],
-  "revenue_recognition_policies": [
-    {
-      "category": "product|software_license|subscription|service|NRE",
-      "policy": "确认方式（时点/时段、交付条件）≤200字",
-      "key_judgments": "关键判断（SSP估计、合约组合、可变对价）≤150字"
-    }
-  ],
-  "purchase_obligation_summaries": [
-    {
-      "total_outstanding": null,
-      "inventory_purchase_obligations": null,
-      "non_inventory_obligations": null,
-      "cloud_service_agreements": null,
-      "breakdown_by_year": [{"year": "FY20XX", "amount": null}],
-      "note": null
-    }
-  ],
-  "asp_trends": [
-    {
-      "product_category": "产品类别",
-      "trend": "ASP变化趋势 ≤120字",
-      "driver": "驱动因素 ≤120字",
-      "note": null
-    }
-  ],
-  "recurring_revenue_breakdowns": [
-    {
-      "recurring_revenue": null,
-      "recurring_pct": null,
-      "nonrecurring_revenue": null,
-      "nonrecurring_pct": null,
-      "note": "如原文无明确拆分，说明估算依据"
-    }
+    {"issue_description": "问题描述", "issue_category": "financial|operational|legal|regulatory", "severity": "critical|major|minor"}
   ],
   "summary": "≤200字叙事摘要",
   "one_liner": "≤50字一句话总结"
 }
 ```
 
-## 经营议题表说明（最重要）
-operational_issues 提取自 CEO致股东信、MD&A 等定性讨论段落。
-- 每行 = 一个经营议题（如"数据中心需求"、"供应链管理"、"中国市场出口管制"）
-- performance: 管理层对该议题的定性描述（不要放财务数字，财务数字在三表里）
-- attribution: 为什么出现这个表现
-- risk: 该议题面临什么风险
-- guidance: 管理层对未来的展望/指引
-- 四个字段都是 Optional，没提到就留 null
+## 提取规则
+- operational_issues: 每个经营议题独立一行，从 MD&A / CEO Letter 提取
+- performance 只写定性描述，不含财务数字
+- 无数据的字段返回空数组
+- summary/one_liner 必须用中文
+""",
 
-## 新增提取类型说明
-- inventory_provisions: 库存减值/拨备，从 inventory note 或 COGS 明细提取
-- deferred_revenues: 递延收入余额，从资产负债表负债科目和收入确认附注提取
-- revenue_recognition_policies: 每类收入的确认政策，从 Note 1 Revenue Recognition 提取
-- purchase_obligation_summaries: 采购义务汇总，从 Commitments and Contingencies 附注提取
-- asp_trends: 产品级 ASP 变化趋势，从 MD&A 定价讨论提取
-- recurring_revenue_breakdowns: 经常性 vs 非经常性收入拆分，从分部披露估算
+    # ── governance topic: 治理 + 债务 + 地域 ──
+    "governance": _PROMPT_HEADER + """
+## 本次任务：提取债务明细、地域收入、治理信息、诉讼
 
-## 规则
-1. 每个独立事实单独成条目
-2. 数字保留原始值和单位，金额统一百万美元
-3. revenue_pct/revenue_share 为 0-1 比例
-4. 无数据则返回空数组
-5. 只输出 JSON
-6. 如果文章与公司财报/年报无关，设 is_relevant_content=false 并说明原因
-★ 无论原文是什么语言，summary 和 one_liner 必须使用中文。\
-"""
+输出 JSON：
+```json
+{
+  "is_relevant_content": true,
+  "skip_reason": null,
+""" + _COMPANY_FIELDS + """
+  "debt_obligations": [
+    {"instrument_name": "债务名称", "debt_type": "bond|loan|lease|convertible|credit_facility", "principal": null, "currency": "USD", "interest_rate": null, "maturity_date": null, "is_secured": false, "is_current": false, "is_floating_rate": false}
+  ],
+  "geographic_revenues": [
+    {"region": "地域", "revenue": null, "revenue_share": null, "growth_yoy": null}
+  ],
+  "litigations": [
+    {"case_name": "案件名", "case_type": "lawsuit|regulatory|patent|antitrust", "status": "pending|settled|dismissed|ongoing", "counterparty": null, "claimed_amount": null, "accrued_amount": null, "description": "案情摘要"}
+  ],
+  "executive_compensations": [
+    {"name": "姓名", "title": "职位", "role_type": "executive|director", "base_salary": null, "stock_awards": null, "total_comp": null, "pay_ratio": null}
+  ],
+  "stock_ownership": [
+    {"name": "持有人", "title": "职位", "shares_beneficially_owned": null, "percent_of_class": null}
+  ],
+  "related_party_transactions": [
+    {"related_party": "关联方", "relationship": "director|officer|major_shareholder|subsidiary", "transaction_type": "sale|purchase|lease|loan|service", "amount": null, "description": "交易说明"}
+  ],
+  "revenue_recognition_policies": [
+    {"category": "product|software_license|subscription|service", "policy": "确认方式 ≤200字", "key_judgments": "关键判断 ≤150字"}
+  ],
+  "purchase_obligation_summaries": [
+    {"total_outstanding": null, "inventory_purchase_obligations": null, "note": null}
+  ],
+  "audit_opinion": {"opinion_type": "unqualified|qualified|adverse|disclaimer", "auditor_name": "事务所名"},
+  "executive_changes": [
+    {"person_name": "姓名", "title": "职位", "change_type": "joined|departed|promoted|demoted", "change_date": "YYYY-MM-DD"}
+  ]
+}
+```
+
+## 提取规则
+- 金额统一百万美元，revenue_share 为 0-1 比例
+- 无数据返回空数组
+""",
+}
+
+# 向后兼容：单 prompt 模式
+SYSTEM_COMPANY = SYSTEM_PROMPTS["business"]
 
 
 def _build_user_message(content: str, platform: str, author: str, today: str) -> str:
@@ -374,11 +181,11 @@ def _build_user_message(content: str, platform: str, author: str, today: str) ->
 
 ## 文章内容
 
-{content[:50000]}{"..." if len(content) > 50000 else ""}
+{content[:100000]}{"..." if len(content) > 100000 else ""}
 
 ## 提取任务
 
-请从上述文章中提取公司财报/年报的全部结构化信息。\
+请从上述文章中提取结构化信息，严格按照 system prompt 指定的 JSON 格式输出。\
 """
 
 
@@ -576,10 +383,17 @@ async def _extract_single_chunk(
     author: str,
     today: str,
     chunk_label: str = "",
+    topic: str | None = None,
 ) -> CompanyExtractionResult | None:
-    """对单个文本块调用 LLM 提取，返回解析结果或 None。"""
+    """对单个文本块调用 LLM 提取，返回解析结果或 None。
+
+    Args:
+        topic: 聚焦 topic 名（business/governance），使用对应的精简 prompt。
+               None 时使用默认的 business prompt。
+    """
+    system = SYSTEM_PROMPTS.get(topic, SYSTEM_PROMPTS["business"])
     user_msg = _build_user_message(content, platform, author, today)
-    raw = await call_llm(SYSTEM_COMPANY, user_msg, _MAX_TOKENS)
+    raw = await call_llm(system, user_msg, _MAX_TOKENS)
     if raw is None:
         logger.warning(f"[Company] LLM returned None {chunk_label}")
         return None
@@ -649,6 +463,7 @@ async def extract_company_compute(
                 parsed = await _extract_single_chunk(
                     topic_text, platform, author, today,
                     chunk_label=f" [{topic}]",
+                    topic=topic,
                 )
                 return topic, parsed
 
