@@ -35,14 +35,14 @@ SYSTEM_CAUSAL = """\
 
 ### 第一步：列出文章的核心论点
 先通读全文，识别作者提出的每一个核心论点、概念、框架或交易逻辑。
-例如：作者提出了"HALO交易"概念（Hard Assets, Low Obsolescence），这是一个论点，需要被拆解。
+一个概念或框架背后通常包含多条因果关系，需要拆解。
 
 ### 第二步：将每个论点拆解为因果链
 把每个论点分解为一组 cause→effect 对。
-例如："HALO交易"拆解为：
-  - AI颠覆风险上升 → 软件/轻资产公司估值承压
-  - 软件/轻资产估值承压 → 资金流向抗颠覆的重资产行业
-  - 重资产行业资金流入 → HALO类资产价格上涨
+例如："利率上升冲击高杠杆行业"拆解为：
+  - 基准利率上升 → 企业融资成本增加
+  - 融资成本增加 → 高杠杆企业利润承压
+  - 利润承压 → 股价下跌
 
 ## mechanism 和 conditions 必须分离
 
@@ -64,7 +64,7 @@ SYSTEM_CAUSAL = """\
     {
       "name": "规范化英文ID，snake_case，如 tsmc_advanced_node_price",
       "domain": "company|industry|policy|cycle|geopolitics|capital|technology",
-      "description": "中文描述，≤50字。专业术语必须解释含义（如 HALO = Hard Assets Low Obsolescence，抗AI颠覆的重资产投资策略）",
+      "description": "中文描述，≤50字。专业术语必须解释含义，不能只给标签",
       "observable": true/false
     }
   ],
@@ -91,7 +91,7 @@ SYSTEM_CAUSAL = """\
 6. **数字敏感**——保留原始数值（如"S&P500二月份走出一年来最差的单月行情"）
 7. **覆盖率**——一篇 1000+ 字的分析文章通常包含 8-15 条因果关系。少于 5 条请重新审视
 8. **不要合并多步传导**——每条因果链是一对一的 cause→effect，多步链拆成多条
-9. **概念/框架必须拆解**——作者提出的新概念（如 HALO、反身性循环）不是一个变量，是一组因果关系，必须拆解为多条 cause→effect
+9. **概念/框架必须拆解**——作者提出的新概念或交易逻辑不是一个变量，是一组因果关系，必须拆解为多条 cause→effect
 """
 
 
