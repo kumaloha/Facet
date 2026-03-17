@@ -46,8 +46,19 @@ class Settings(BaseSettings):
     collector_interval_minutes: int = 60
     collector_max_results_per_query: int = 100
 
-    # LLM 提取并发控制（本地模型设 1，云端 API 可设 2-5）
-    extract_concurrency: int = 1
+    # LLM 提取并发控制（不需要手动设置，自动根据 llm_base_url 判断）
+    # 本地模型（localhost）→ 1，云端 API → 3
+    extract_concurrency: int = 0  # 0 = 自动
+
+    @property
+    def effective_extract_concurrency(self) -> int:
+        if self.extract_concurrency > 0:
+            return self.extract_concurrency
+        # 自动判断：本地模型串行，云端并发
+        url = self.llm_base_url.lower()
+        if "localhost" in url or "127.0.0.1" in url:
+            return 1
+        return 3
 
     # RSS — 空则使用内置列表
     rss_feeds: str = ""
