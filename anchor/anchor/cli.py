@@ -92,6 +92,20 @@ def backfill(ticker: str, years: int, fill_gaps: bool):
     backfill_command(ticker, years, fill_gaps)
 
 
+@main.command("market-update")
+@click.option("--ticker", default=None, metavar="TICKER", help="只更新指定股票（不填则更新全部已跟踪公司）")
+@click.option("--macro-only", is_flag=True, help="只更新宏观指标")
+@click.option("--days", default=30, type=int, metavar="N", help="拉取最近 N 天数据（默认30）")
+def market_update(ticker: str | None, macro_only: bool, days: int):
+    """更新市场数据（个股行情 + 宏观指标）"""
+    import asyncio
+
+    from anchor.collect.market import market_update as _market_update
+
+    result = asyncio.run(_market_update(ticker=ticker, macro_only=macro_only, days=days))
+    click.echo(f"Done. Stocks: +{result['stocks']} rows, Macro: +{result['macro']} rows")
+
+
 @main.command()
 @click.option("--host", default="0.0.0.0", help="绑定地址")
 @click.option("--port", default=8765, type=int, help="监听端口")

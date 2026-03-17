@@ -1033,6 +1033,45 @@ class ManagementGuidance(SQLModel, table=True):
 
 
 # ===========================================================================
+# 市场数据 — 股价 + 宏观指标（供 Polaris 三流派引擎使用）
+# ===========================================================================
+
+
+class StockQuote(SQLModel, table=True):
+    """个股日行情 — 每 ticker 每日一行"""
+
+    __tablename__ = "stock_quotes"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    company_id: Optional[int] = Field(
+        default=None, foreign_key="company_profiles.id", index=True
+    )
+    ticker: str = Field(index=True)
+    trade_date: date = Field(index=True)
+    price_open: Optional[float] = None
+    price_high: Optional[float] = None
+    price_low: Optional[float] = None
+    price_close: Optional[float] = None
+    volume: Optional[int] = None
+    shares_outstanding: Optional[float] = None   # 流通股数
+    market_cap: Optional[float] = None            # 市值
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class MacroIndicator(SQLModel, table=True):
+    """宏观指标 — 每指标每日一行"""
+
+    __tablename__ = "macro_indicators"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    trade_date: date = Field(index=True)
+    indicator: str = Field(index=True)            # treasury_10y|vix|sp500_pe|sp500_earnings_yield|gdp_growth_yoy|cpi_yoy|inflation_expectation_5y
+    value: float
+    source: str = "yfinance"                      # yfinance|fred|manual
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+# ===========================================================================
 # 因果模型 — 动态因果图（开放式认知）
 # ===========================================================================
 

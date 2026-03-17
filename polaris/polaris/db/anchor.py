@@ -295,3 +295,52 @@ def get_management_guidance(company_id: int) -> pd.DataFrame:
         "WHERE company_id = :cid ORDER BY source_period",
         {"cid": company_id},
     )
+
+
+# ── 市场数据查询（stock_quotes + macro_indicators）────────────────
+
+
+def get_latest_stock_quote(ticker: str) -> dict | None:
+    """获取某 ticker 最新一条行情。返回 dict 或 None。"""
+    df = query_df_safe(
+        "SELECT * FROM stock_quotes "
+        "WHERE ticker = :ticker ORDER BY trade_date DESC LIMIT 1",
+        {"ticker": ticker},
+    )
+    return df.iloc[0].to_dict() if not df.empty else None
+
+
+def get_latest_macro(indicator: str) -> float | None:
+    """获取某宏观指标最新值。"""
+    df = query_df_safe(
+        "SELECT value FROM macro_indicators "
+        "WHERE indicator = :ind ORDER BY trade_date DESC LIMIT 1",
+        {"ind": indicator},
+    )
+    return float(df.iloc[0]["value"]) if not df.empty else None
+
+
+def get_guidance_dict(company_id: int) -> dict[str, float | None]:
+    """将 management_guidance 表转换为 DCF 引擎需要的 dict 格式。
+
+    取每个 metric 最新一条 guidance 的 value_low/value_high 中值。
+    """
+    df = get_management_guidance(company_id)
+    if df.empty:
+        return {}
+
+    result: dict[str, float | None] = {}
+    # 按 metric 分组，取最新 source_period
+    for metric in df["metric"].unique():
+        rows = df[df["metric"] == metric].sort_values("source_period", ascending=False)
+        row = rows.iloc[0]
+        low = row.get("value_low")
+        high = row.get("value_high")
+        if low is not None and high is not None:
+            result[metric] = (float(low) + float(high)) / 2
+        elif low is not None:
+            result[metric] = float(low)
+        elif high is not None:
+            result[metric] = float(high)
+
+    return result

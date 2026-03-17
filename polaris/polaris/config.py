@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     # ── 数据库 ────────────────────────────────────────────────────
     # 支持 sqlite:///path 和 postgresql://user:pass@host/db
-    anchor_db_url: str = "sqlite:///./data/facet.db"
+    anchor_db_url: str = "sqlite:///./data/anchor.db"
     polaris_db_url: str = "sqlite:///./data/facet.db"
 
     # ── 运行环境 ─────────────────────────────────────────────────

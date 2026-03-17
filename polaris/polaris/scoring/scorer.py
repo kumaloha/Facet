@@ -212,6 +212,30 @@ def _determine_reflexivity_phase(features: dict[str, float]) -> str:
 # ── 主入口 ───────────────────────────────────────────────────────
 
 
+def _fetch_market_context(ticker: str, company_id: int) -> dict:
+    """从 Anchor DB 获取市场数据上下文。
+
+    Returns:
+        {
+            "price": float | None,
+            "shares_outstanding": float | None,
+            "discount_rate": float | None,
+            "guidance": dict[str, float | None],
+        }
+    """
+    from polaris.db.anchor import get_guidance_dict, get_latest_macro, get_latest_stock_quote
+
+    quote = get_latest_stock_quote(ticker)
+    treasury = get_latest_macro("treasury_10y")
+
+    return {
+        "price": quote.get("price_close") if quote else None,
+        "shares_outstanding": quote.get("shares_outstanding") if quote else None,
+        "discount_rate": treasury / 100.0 if treasury is not None else None,  # ^TNX 以百分比存储
+        "guidance": get_guidance_dict(company_id),
+    }
+
+
 def score_company(
     company_id: int,
     company_name: str,
@@ -227,23 +251,42 @@ def score_company(
         period=period,
     )
 
+    # 获取市场数据
+    mkt = _fetch_market_context(ticker, company_id)
+
     # ── 巴菲特 ──
     b_score = score_school(School.BUFFETT, features)
     passed, filter_details = _check_buffett_filters(features)
-    result.buffett = BuffettResult(
+
+    buffett_result = BuffettResult(
         school_score=b_score,
         filters_passed=passed,
         filter_details=filter_details,
-        # 内在价值需要外部数据（折现率），此处标记状态
-        valuation_status="valued" if passed else "unvaluable",
+        valuation_status="unvaluable",
     )
+
+    # 过滤通过 + 有市场数据 → 计算内在价值
+    if passed and mkt["discount_rate"] is not None and mkt["shares_outstanding"] is not None:
+        from polaris.scoring.engines.dcf import compute_intrinsic_value
+
+        dcf = compute_intrinsic_value(
+            features=features,
+            guidance=mkt["guidance"],
+            discount_rate=mkt["discount_rate"],
+            shares_outstanding=mkt["shares_outstanding"],
+        )
+        buffett_result.intrinsic_value = dcf.intrinsic_value
+        buffett_result.valuation_path = dcf.valuation_path
+        buffett_result.valuation_status = dcf.status
+        buffett_result.key_assumptions = dcf.key_assumptions or {}
+
+    result.buffett = buffett_result
 
     # ── 达利欧 ──
     d_score = score_school(School.DALIO, features)
     result.dalio = DalioResult(
         school_score=d_score,
-        # 象限和风险平价需要外部宏观数据，此处为 None
-        # 公司脆弱度从规则得分反映
+        # 象限和风险平价需要外部宏观数据（FRED + ETF 日线），暂不可用
         vulnerability_score=d_score.score,
         vulnerability_drivers=d_score.drivers,
     )
@@ -251,12 +294,39 @@ def score_company(
     # ── 索罗斯 ──
     s_score = score_school(School.SOROS, features)
     phase = _determine_reflexivity_phase(features)
-    result.soros = SorosResult(
+
+    soros_result = SorosResult(
         school_score=s_score,
         reflexivity_phase=phase,
         financing_dependency=features.get("l0.company.financing_dependency"),
         leverage_acceleration=features.get("l0.company.leverage_acceleration"),
     )
+
+    # 有股价 + 市场数据 → 计算预期差（反向 DCF）
+    oe = features.get("l0.company.owner_earnings")
+    if (
+        mkt["price"] is not None
+        and mkt["shares_outstanding"] is not None
+        and mkt["discount_rate"] is not None
+        and oe is not None
+        and oe > 0
+    ):
+        from polaris.scoring.engines.dcf import reverse_dcf
+
+        rdcf = reverse_dcf(
+            current_price=mkt["price"],
+            current_owner_earnings=oe,
+            discount_rate=mkt["discount_rate"],
+            shares_outstanding=mkt["shares_outstanding"],
+        )
+        if rdcf.status == "computed":
+            soros_result.implied_growth_rate = rdcf.implied_growth_rate
+            actual_growth = features.get("l0.company.revenue_growth_yoy")
+            soros_result.actual_growth_rate = actual_growth
+            if actual_growth is not None and rdcf.implied_growth_rate is not None:
+                soros_result.expectation_gap = rdcf.implied_growth_rate - actual_growth
+
+    result.soros = soros_result
 
     return result
 
@@ -268,7 +338,7 @@ def format_report(analysis: CompanyAnalysis) -> str:
     """格式化三流派分析报告（终端输出）。"""
     lines = [""]
     lines.append("=" * 60)
-    lines.append("  AXION 三流派分析报告")
+    lines.append("  POLARIS 三流派分析报告")
     lines.append("=" * 60)
     lines.append(
         f"  {analysis.company_name} ({analysis.ticker})"
