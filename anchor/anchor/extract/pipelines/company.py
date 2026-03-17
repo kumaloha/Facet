@@ -506,22 +506,23 @@ def _merge_extraction_results(
 
 
 # 长文档阈值（超过此长度尝试分段提取）
-_CHUNK_THRESHOLD = 50_000
+_CHUNK_THRESHOLD = 100_000
 
 # Topic → 主要产出表的映射（用于增量提取：跳过已有数据的 topic）
 TOPIC_TO_TABLES: dict[str, list[str]] = {
     "business": [
         "operational_issues", "company_narratives",
-        "litigations", "non_financial_kpis", "inventory_provisions",
-    ],
-    "commercial": [
         "downstream_segments", "upstream_segments",
-        "purchase_obligation_summaries", "deferred_revenues",
-        "revenue_recognition_policies", "asp_trends", "recurring_revenue_breakdowns",
+        "competitor_relations", "market_share_data",
+        "litigations", "non_financial_kpis",
+        "management_guidance", "known_issues",
     ],
-    "financial": [
-        "financial_statements", "financial_line_items", "debt_obligations",
-        "geographic_revenues",
+    "governance": [
+        "debt_obligations", "geographic_revenues",
+        "executive_compensations", "stock_ownership",
+        "related_party_transactions",
+        "revenue_recognition_policies", "deferred_revenues",
+        "purchase_obligation_summaries",
     ],
 }
 

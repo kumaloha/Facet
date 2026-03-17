@@ -83,41 +83,29 @@ def split_10k(text: str) -> dict[str, str]:
 # 主题 → 所需段落的映射
 # ============================================================
 TOPIC_SECTIONS = {
-    # ── 合并后 3 大主题 ──────────────────────────────────────────
+    # ── 2 个精准主题（三表由 yfinance 提供，不再 LLM 提取）────────
+    #
+    # 优化原则：
+    # 1. 跳过 item_1a（Risk Factors，115KB 模板化内容，信噪比极低）
+    # 2. 跳过财务报表相关 note（三表数据由 yfinance 提供）
+    # 3. 每个 section 只出现在一个 topic 中，避免重复处理
+    # 4. 总输入量控制在 2 次 LLM 调用以内
+    #
     "business": [
-        # operations + risk_kpi
-        "item_1",       # Business（含 CEO letter 概述、员工数等 KPI）
-        "item_1a",      # Risk Factors
-        "item_3",       # Legal Proceedings
-        "item_7",       # MD&A
-        "note_12",      # Commitments and Contingencies（诉讼）
-        "note_13",      # 部分年份诉讼在这里
+        # 经营议题、叙事、竞争格局、管理层指引
+        "item_1",       # Business（商业模式、产品线、竞争对手、市场份额）
+        "item_7",       # MD&A（经营议题、业绩归因、前瞻指引）
+        "item_3",       # Legal Proceedings（诉讼）
     ],
-    "commercial": [
-        # supply_chain + revenue_model
-        "item_1",       # Business（供应商/客户/产品描述）
-        "item_1a",      # Risk Factors（供应链风险）
-        "item_7",       # MD&A（收入分析、客户集中度、ASP 讨论）
-        "note_1",       # Revenue Recognition 政策
-        "note_9",       # Balance Sheet Components（递延收入，FY2025）
-        "note_10",      # Balance Sheet Components（递延收入，FY2021-FY2024）
-        "note_12",      # Commitments and Contingencies（采购义务）
-        "note_13",      # 有些年份 commitments 在这里
-    ],
-    "financial": [
-        # financials + geographic
-        "note_1",       # Accounting Policies（含收入确认）
-        "note_3",       # SBC（部分年份）
-        "note_4",       # SBC（部分年份）
-        "note_11",      # Debt
-        "note_12",      # Commitments
-        "note_13",      # Income Taxes（部分年份）
-        "note_14",      # Income Taxes / Shareholders' Equity
-        "note_15",      # Shareholders' Equity（部分年份）
-        "note_16",      # Segment Information（含地理收入）
+    "governance": [
+        # 上下游、治理、债务、地域
+        "note_1",       # Accounting Policies（收入确认、递延收入）
+        "note_11",      # Debt（债务明细）
+        "note_12",      # Commitments and Contingencies（采购义务、诉讼）
+        "note_13",      # 部分年份 commitments/segment 在这里
+        "note_16",      # Segment Information（地理收入、业务分部）
         "note_17",      # Segment Information（部分年份）
-        "item_5",       # Market for Common Equity（回购等）
-        "item_7",       # MD&A（地域讨论）
+        "item_5",       # Market for Common Equity（回购）
     ],
 }
 
