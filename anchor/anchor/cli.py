@@ -106,6 +106,22 @@ def market_update(ticker: str | None, macro_only: bool, days: int):
     click.echo(f"Done. Stocks: +{result['stocks']} rows, Macro: +{result['macro']} rows")
 
 
+@main.command("financials-update")
+@click.option("--ticker", default=None, metavar="TICKER", help="只更新指定公司（不填则更新全部已跟踪公司）")
+def financials_update(ticker: str | None):
+    """从 yfinance 拉取三表数据（利润表/资产负债表/现金流量表）"""
+    import asyncio
+
+    from anchor.collect.market import financials_update as _financials_update
+
+    result = asyncio.run(_financials_update(ticker=ticker))
+    click.echo(
+        f"Done. Companies: {result['companies']}, "
+        f"Statements: +{result['statements']}, "
+        f"Line items: +{result['line_items']}"
+    )
+
+
 @main.command()
 @click.option("--host", default="0.0.0.0", help="绑定地址")
 @click.option("--port", default=8765, type=int, help="监听端口")

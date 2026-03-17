@@ -9,15 +9,56 @@ import pandas as pd
 from polaris.features.types import ComputeContext
 
 
+# 别名映射：特征代码期望的 key → yfinance 实际的 key
+# 让特征代码不需要关心数据源的命名差异
+_ITEM_KEY_ALIASES: dict[str, list[str]] = {
+    "revenue": ["total_revenue", "operating_revenue"],
+    "depreciation_amortization": [
+        "reconciled_depreciation",
+        "depreciation_and_amortization",
+        "depreciation_amortization_depletion",
+    ],
+    "capital_expenditures": ["capital_expenditure", "capital_expenditure_reported"],
+    "operating_cash_flow": [
+        "cash_flow_from_continuing_operating_activities",
+        "operating_cash_flow",
+    ],
+    "total_equity": ["stockholders_equity", "common_stock_equity", "total_equity_gross_minority_interest"],
+    "total_liabilities": ["total_liabilities_net_minority_interest"],
+    "total_debt": ["total_debt", "long_term_debt_and_capital_lease_obligation"],
+    "interest_expense": ["interest_expense", "interest_expense_non_operating"],
+    "current_assets": ["current_assets"],
+    "current_liabilities": ["current_liabilities"],
+    "accounts_receivable": ["accounts_receivable", "receivables"],
+    "inventory": ["inventory"],
+    "goodwill": ["goodwill"],
+    "share_repurchase": ["repurchase_of_capital_stock"],
+    "dividends_paid": ["cash_dividends_paid", "common_stock_dividend_paid"],
+    "shares_outstanding": ["ordinary_shares_number", "share_issued", "diluted_average_shares"],
+}
+
+
 def get_item(ctx: ComputeContext, item_key: str) -> float | None:
-    """从 financial_line_items 中查找某个科目的值（当期）。"""
+    """从 financial_line_items 中查找某个科目的值（当期）。
+
+    先精确匹配 item_key，找不到则尝试别名。
+    """
     df = ctx.get_financial_line_items()
     if df.empty:
         return None
+
+    # 精确匹配
     matches = df[df["item_key"] == item_key]
-    if matches.empty:
-        return None
-    return float(matches.iloc[0]["value"])
+    if not matches.empty:
+        return float(matches.iloc[0]["value"])
+
+    # 别名匹配
+    for alias in _ITEM_KEY_ALIASES.get(item_key, []):
+        matches = df[df["item_key"] == alias]
+        if not matches.empty:
+            return float(matches.iloc[0]["value"])
+
+    return None
 
 
 def get_item_series(
@@ -26,16 +67,23 @@ def get_item_series(
     """获取某科目跨期的时间序列。
 
     返回按 period 排序的 Series，index=period, values=float。
+    先精确匹配 item_key，找不到则尝试别名。
     """
     df = ctx.get_financial_line_items_history(n_periods=n_periods)
     if df.empty:
         return pd.Series(dtype=float)
-    items = df[df["item_key"] == item_key][["period", "value"]].drop_duplicates(
-        subset=["period"]
-    )
-    if items.empty:
-        return pd.Series(dtype=float)
-    return items.set_index("period")["value"].sort_index().astype(float)
+
+    # 尝试的 key 列表：原始 key + 别名
+    keys_to_try = [item_key] + _ITEM_KEY_ALIASES.get(item_key, [])
+
+    for key in keys_to_try:
+        items = df[df["item_key"] == key][["period", "value"]].drop_duplicates(
+            subset=["period"]
+        )
+        if not items.empty:
+            return items.set_index("period")["value"].sort_index().astype(float)
+
+    return pd.Series(dtype=float)
 
 
 def safe_div(numerator: float | None, denominator: float | None) -> float | None:
