@@ -107,7 +107,7 @@ def yoy_growth(series: pd.Series) -> float | None:
     if len(series) < 2:
         return None
     current = series.iloc[-1]
-    prior = series.iloc[-5] if len(series) >= 5 else series.iloc[0]
+    prior = series.iloc[-5] if len(series) >= 5 else series.iloc[-2]
     if prior == 0:
         return None
     return (current - prior) / abs(prior)

@@ -76,10 +76,10 @@ def incremental_roic_high(f: dict[str, float]) -> float:
     return 2.0 if v is not None and v > 0.15 else 0.0
 
 
-@rule("margin_expanding", School.BUFFETT, "毛利率连续扩张 > 4 期（护城河在加宽）")
+@rule("margin_expanding", School.BUFFETT, "毛利率连续扩张 >= 2 期（护城河在加宽）")
 def margin_expanding(f: dict[str, float]) -> float:
     v = _get(f, "consecutive_margin_expansion")
-    return 1.0 if v is not None and v > 4 else 0.0
+    return 1.0 if v is not None and v >= 2 else 0.0
 
 
 @rule("stable_gross_margin", School.BUFFETT, "毛利率标准差 < 0.03（定价权稳定）")
@@ -228,16 +228,28 @@ def very_stable_margins(f: dict[str, float]) -> float:
     return 0.0
 
 
-@rule("long_growth_streak", School.BUFFETT, "收入连续增长 > 8 期（高可预测性）")
+@rule("long_growth_streak", School.BUFFETT, "收入连续增长 >= 3 期（可预测性）")
 def long_growth_streak(f: dict[str, float]) -> float:
     v = _get(f, "consecutive_revenue_growth")
-    return 2.0 if v is not None and v > 8 else 0.0
+    if v is None:
+        return 0.0
+    if v >= 6:
+        return 2.0
+    if v >= 3:
+        return 1.0
+    return 0.0
 
 
-@rule("consistent_fcf", School.BUFFETT, "FCF 连续为正 > 8 期（现金造血稳定）")
+@rule("consistent_fcf", School.BUFFETT, "FCF 连续为正 >= 3 期（现金造血稳定）")
 def consistent_fcf(f: dict[str, float]) -> float:
     v = _get(f, "consecutive_positive_fcf")
-    return 1.5 if v is not None and v > 8 else 0.0
+    if v is None:
+        return 0.0
+    if v >= 6:
+        return 1.5
+    if v >= 3:
+        return 1.0
+    return 0.0
 
 
 @rule("high_roe", School.BUFFETT, "ROE > 15%（优秀回报）")

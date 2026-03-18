@@ -137,7 +137,7 @@ def score_school(school: School, features: dict[str, float]) -> SchoolScore:
 BUFFETT_FILTER_THRESHOLDS = {
     "predictability": {
         "l0.company.gross_margin_stability": ("<=", 0.10),
-        "l0.company.consecutive_revenue_growth": (">=", 4),
+        "l0.company.consecutive_revenue_growth": (">=", 2),
     },
     "earnings_quality": {
         "l0.company.ocf_to_net_income": (">=", 0.6),
@@ -242,8 +242,14 @@ def score_company(
     ticker: str,
     period: str,
     features: dict[str, float],
+    market_context: dict | None = None,
 ) -> CompanyAnalysis:
-    """对一家公司执行三流派分析。"""
+    """对一家公司执行三流派分析。
+
+    market_context: 可选，直接注入市场数据（用于测试或无 DB 场景）。
+        格式: {"price", "shares_outstanding", "discount_rate", "guidance": {...}}
+        不传时从 Anchor DB 获取。
+    """
     result = CompanyAnalysis(
         company_id=company_id,
         company_name=company_name,
@@ -252,11 +258,24 @@ def score_company(
     )
 
     # 获取市场数据
-    mkt = _fetch_market_context(ticker, company_id)
+    if market_context is not None:
+        mkt = market_context
+    else:
+        mkt = _fetch_market_context(ticker, company_id)
 
     # ── 巴菲特 ──
     b_score = score_school(School.BUFFETT, features)
     passed, filter_details = _check_buffett_filters(features)
+
+    # 过滤未通过时，信号不能高于"观望"
+    if not passed and b_score.signal == "值得持有":
+        b_score = SchoolScore(
+            school=b_score.school,
+            score=b_score.score,
+            raw_points=b_score.raw_points,
+            signal="观望（过滤未通过）",
+            drivers=b_score.drivers,
+        )
 
     buffett_result = BuffettResult(
         school_score=b_score,

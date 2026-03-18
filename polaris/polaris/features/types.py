@@ -233,6 +233,27 @@ class ComputeContext:
             self._cache[key] = anchor.get_market_share_data(self.company_id)
         return self._cache[key]
 
+    def get_competitive_dynamics(self) -> pd.DataFrame:
+        key = "competitive_dynamics"
+        if key not in self._cache:
+            self._cache[key] = pd.DataFrame()
+        return self._cache[key]
+
+    def get_peer_financials(self) -> pd.DataFrame:
+        """同行财务数据（用于成本优势同行对比）。
+        列: peer_name, metric, value, period
+        """
+        key = "peer_financials"
+        if key not in self._cache:
+            self._cache[key] = pd.DataFrame()
+        return self._cache[key]
+
+    def get_brand_signals(self) -> pd.DataFrame:
+        key = "brand_signals"
+        if key not in self._cache:
+            self._cache[key] = pd.DataFrame()
+        return self._cache[key]
+
 
 @dataclass
 class FeatureResult:
