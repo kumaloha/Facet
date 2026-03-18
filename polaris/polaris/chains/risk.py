@@ -148,16 +148,22 @@ def assess_risk(ctx: ComputeContext) -> RiskResult:
             f"利息覆盖率 = {ic:.1f}，可能无法偿债"))
 
     # ══════════════════════════════════════════════════════════
-    #  监管 / 技术颠覆（从 competitive_dynamics）
+    #  监管 / 政策突变
     # ══════════════════════════════════════════════════════════
 
     cd = ctx.get_competitive_dynamics()
     if not cd.empty and "event_type" in cd.columns:
-        # 监管
         reg = cd[cd["event_type"] == "regulatory_change"]
         for _, row in reg.iterrows():
             desc = str(row.get("event_description", ""))
-            r.risks.append(RiskItem("regulatory", "significant", f"监管变化: {desc}"))
+            # 灭顶性政策（行业被禁/强制退市）
+            ban_kw = ["禁止", "取缔", "全面整顿", "强制退市", "ban", "shutdown", "双减"]
+            if any(kw in desc for kw in ban_kw):
+                r.risks.append(RiskItem("regulatory", "catastrophic",
+                    f"政策灭顶: {desc}"))
+            else:
+                r.risks.append(RiskItem("regulatory", "significant",
+                    f"监管变化: {desc}"))
 
         # 技术颠覆
         tech = cd[cd["event_type"].isin(["product_launch", "new_entry"])]
@@ -167,6 +173,94 @@ def assess_risk(ctx: ComputeContext) -> RiskResult:
             if any(kw in desc for kw in disrupt_kw):
                 r.risks.append(RiskItem("tech_disruption", "significant",
                     f"技术颠覆: {desc}"))
+
+    # ══════════════════════════════════════════════════════════
+    #  诉讼 / 巨额负债风险
+    # ══════════════════════════════════════════════════════════
+
+    lit = ctx.get_litigations()
+    if not lit.empty:
+        # 统计进行中诉讼
+        pending = lit
+        if "status" in lit.columns:
+            pending = lit[lit["status"].isin(["pending", "ongoing"])]
+
+        if not pending.empty:
+            count = len(pending)
+
+            # 看诉讼金额 vs 公司规模
+            total_claimed = 0
+            if "claimed_amount" in pending.columns:
+                total_claimed = pending["claimed_amount"].dropna().sum()
+
+            revenue = _feat(ctx, "gross_margin")  # 先拿 equity 来比
+            equity = None
+            fli = ctx.get_financial_line_items()
+            if not fli.empty:
+                eq_rows = fli[fli["item_key"] == "shareholders_equity"]
+                if not eq_rows.empty:
+                    equity = float(eq_rows.iloc[0]["value"])
+
+            if total_claimed > 0 and equity is not None and equity > 0:
+                claim_ratio = total_claimed / equity
+                if claim_ratio > 0.5:
+                    r.risks.append(RiskItem("litigation", "catastrophic",
+                        f"{count} 件诉讼，索赔总额/权益 = {claim_ratio:.0%}，可能致命"))
+                elif claim_ratio > 0.1:
+                    r.risks.append(RiskItem("litigation", "significant",
+                        f"{count} 件诉讼，索赔总额/权益 = {claim_ratio:.0%}"))
+                else:
+                    r.risks.append(RiskItem("litigation", "moderate",
+                        f"{count} 件诉讼，索赔金额相对可控"))
+            elif count >= 5:
+                r.risks.append(RiskItem("litigation", "significant",
+                    f"{count} 件进行中诉讼"))
+            elif count >= 1:
+                r.risks.append(RiskItem("litigation", "moderate",
+                    f"{count} 件进行中诉讼"))
+
+    # ══════════════════════════════════════════════════════════
+    #  疫情/黑天鹅暴露度
+    # ══════════════════════════════════════════════════════════
+
+    # 检测行业是否属于黑天鹅高暴露行业
+    ds = ctx.get_downstream_segments()
+    if not ds.empty and "product_category" in ds.columns:
+        categories = ds["product_category"].dropna().str.lower().unique().tolist()
+        # 高暴露行业: 线下强依赖、人员密集、跨境
+        high_exposure = {"airline", "aviation", "hotel", "tourism", "travel",
+                        "restaurant", "cinema", "live_event", "cruise",
+                        "retail_physical", "gym", "fitness"}
+        exposed = [c for c in categories if c in high_exposure]
+        if exposed:
+            r.risks.append(RiskItem("black_swan", "significant",
+                f"行业属于黑天鹅高暴露: {', '.join(exposed)}（疫情/自然灾害可致收入归零）"))
+
+    # 也从 revenue_type 推断
+    if not ds.empty and "revenue_type" in ds.columns:
+        rev_types = ds["revenue_type"].dropna().str.lower().unique().tolist()
+        physical_types = [t for t in rev_types if t in (
+            "ticket", "physical_retail", "dine_in", "room_night")]
+        if physical_types:
+            r.risks.append(RiskItem("black_swan", "significant",
+                f"收入依赖线下场景: {', '.join(physical_types)}"))
+
+    # ══════════════════════════════════════════════════════════
+    #  货币风险
+    # ══════════════════════════════════════════════════════════
+
+    # 收入分散在多个新兴市场 = 货币风险
+    if not geo.empty and "region" in geo.columns:
+        VOLATILE_CURRENCY = ["argentina", "阿根廷", "turkey", "土耳其",
+                            "nigeria", "尼日利亚", "egypt", "埃及",
+                            "pakistan", "巴基斯坦", "venezuela", "委内瑞拉"]
+        for _, row in geo.iterrows():
+            region = str(row.get("region", "")).lower()
+            share = row.get("revenue_share")
+            if share and share > 0.10:
+                if any(vc in region for vc in VOLATILE_CURRENCY):
+                    r.risks.append(RiskItem("currency", "significant",
+                        f"收入 {share:.0%} 来自货币高波动地区: {row.get('region', '')}"))
 
     # ══════════════════════════════════════════════════════════
     #  综合

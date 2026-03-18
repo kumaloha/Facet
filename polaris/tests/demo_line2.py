@@ -233,6 +233,69 @@ def risk_catastrophic():
     print(format_risk(assess_risk(ctx)))
 
 
+def risk_litigation():
+    banner("风险 Case 4: 类强生", "巨额诉讼，索赔/权益 > 50%")
+    ctx = make_ctx(
+        litigations=_df([
+            {"status": "pending", "accrued_amount": 5000, "claimed_amount": 20000,
+             "case_name": "产品责任诉讼 A", "case_type": "product_liability"},
+            {"status": "ongoing", "accrued_amount": 3000, "claimed_amount": 15000,
+             "case_name": "集体诉讼 B", "case_type": "class_action"},
+            {"status": "pending", "accrued_amount": 1000, "claimed_amount": 8000,
+             "case_name": "环境诉讼 C", "case_type": "environmental"},
+        ], {"company_id": 1, "counterparty": None, "filed_at": None, "currency": "USD",
+            "description": None, "resolution": None, "resolved_at": None,
+            "raw_post_id": None, "created_at": "2025-01-01"}),
+    )
+    print(format_risk(assess_risk(ctx)))
+
+
+def risk_airline():
+    banner("风险 Case 5: 航空公司", "黑天鹅高暴露行业")
+    ctx = make_ctx(
+        downstream_segments=_df([
+            {"customer_name": "国内航线", "revenue_pct": 0.60, "is_recurring": False,
+             "revenue_type": "ticket", "product_category": "airline"},
+            {"customer_name": "国际航线", "revenue_pct": 0.40, "is_recurring": False,
+             "revenue_type": "ticket", "product_category": "airline"},
+        ], {"company_id": 1, "period": "FY2025", "segment": None, "customer_type": None,
+            "products": None, "channels": None, "revenue": None, "growth_yoy": None,
+            "backlog": None, "backlog_note": None, "pricing_model": None,
+            "contract_duration": None, "recognition_method": None, "description": None,
+            "raw_post_id": None, "created_at": "2025-01-01"}),
+    )
+    print(format_risk(assess_risk(ctx)))
+
+
+def risk_education_ban():
+    banner("风险 Case 6: 类好未来", "双减政策灭顶")
+    ctx = make_ctx(
+        competitive_dynamics=_df([
+            {"competitor_name": "行业", "event_type": "regulatory_change",
+             "event_description": "双减政策: 禁止学科类培训机构上市融资",
+             "outcome_description": "行业收入归零",
+             "outcome_market_share_change": None},
+        ], {"company_id": 1, "estimated_investment": None,
+            "outcome_market_share_change": None, "event_date": "2021-07",
+            "raw_post_id": None, "created_at": "2025-01-01"}),
+    )
+    print(format_risk(assess_risk(ctx)))
+
+
+def risk_currency():
+    banner("风险 Case 7: 新兴市场货币", "收入依赖货币高波动地区")
+    ctx = make_ctx(
+        geographic_revenues=_df([
+            {"region": "Turkey", "revenue_share": 0.30},
+            {"region": "Argentina", "revenue_share": 0.25},
+            {"region": "Brazil", "revenue_share": 0.20},
+            {"region": "Other", "revenue_share": 0.25},
+        ], {"company_id": 1, "period": "FY2025", "revenue": None, "growth_yoy": None,
+            "note": None, "raw_post_id": None, "created_at": "2025-01-01"}),
+    )
+    print(format_risk(assess_risk(ctx)))
+
+
 if __name__ == "__main__":
     print("=" * 65)
     print("  线 2 (人和环境) · 全场景验证")
@@ -249,6 +312,10 @@ if __name__ == "__main__":
     risk_tsmc()
     risk_safe()
     risk_catastrophic()
+    risk_litigation()
+    risk_airline()
+    risk_education_ban()
+    risk_currency()
 
     print("\n" + "=" * 65)
     print("  验证完成")
