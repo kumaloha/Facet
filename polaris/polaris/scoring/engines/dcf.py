@@ -62,20 +62,65 @@ def forward_dcf(
     return pv
 
 
+# 各市场股权风险溢价 (ERP)
+# 来源: Damodaran 年度更新 + 本地估算
+# 折现率 = 无风险利率 + ERP
+MARKET_ERP: dict[str, float] = {
+    # 成熟市场
+    "US": 0.045,       # 美国: 国债利率本身够高，ERP ~4.5%
+    "JP": 0.035,       # 日本: 成熟但低利率
+    "UK": 0.04,
+    "DE": 0.04,        # 德国
+    "FR": 0.04,
+    "AU": 0.04,        # 澳大利亚
+    "CA": 0.04,        # 加拿大
+    "HK": 0.05,        # 香港
+    "SG": 0.04,        # 新加坡
+    "KR": 0.045,       # 韩国
+    "TW": 0.045,       # 台湾
+    # 新兴市场
+    "CN": 0.05,        # 中国
+    "IN": 0.06,        # 印度
+    "BR": 0.07,        # 巴西
+    "MX": 0.06,        # 墨西哥
+    "ID": 0.06,        # 印尼
+    "VN": 0.07,        # 越南
+    "SA": 0.05,        # 沙特
+    "ZA": 0.06,        # 南非
+}
+
+# 默认 ERP（未知市场）
+DEFAULT_ERP = 0.05
+
+# 全球折现率下限
+DISCOUNT_RATE_FLOOR = 0.04
+
+
+def get_discount_rate(risk_free_rate: float, market: str = "US") -> float:
+    """计算折现率 = 无风险利率 + 市场 ERP，有下限保护。"""
+    erp = MARKET_ERP.get(market.upper(), DEFAULT_ERP)
+    dr = risk_free_rate + erp
+    return max(dr, DISCOUNT_RATE_FLOOR)
+
+
 def compute_intrinsic_value(
     features: dict[str, float],
     guidance: dict[str, float | None],
     discount_rate: float,
     shares_outstanding: float,
+    market: str = "US",
 ) -> DCFResult:
     """根据可用 guidance 选择计算路径。
 
-    路径优先级：A > B > C > D
-    - A: capex guidance + ROIC
-    - B: revenue_growth guidance
-    - C: EPS guidance
-    - D: margin guidance + 历史增速
+    路径优先级：A > B > C > D > E > F > G
+    - A-D: 有 guidance
+    - E-G: 无 guidance fallback
+
+    折现率按市场调整（无风险利率 + ERP），有下限保护。
     """
+    # 按市场调整折现率
+    discount_rate = get_discount_rate(discount_rate, market)
+
     oe = features.get("l0.company.owner_earnings")
     if oe is None or oe <= 0:
         return DCFResult(status="unvaluable")
@@ -138,7 +183,41 @@ def compute_intrinsic_value(
             status="valued",
         )
 
-    return DCFResult(status="unvaluable")
+    # ── Fallback 路径（无 guidance）──
+
+    # 路径 E: ROIC × 留存率
+    if roic is not None and roic > 0:
+        retention = 1 - payout
+        growth = min(retention * roic, 0.15)  # 封顶 15%
+        iv = forward_dcf(oe, growth, discount_rate, payout)
+        return DCFResult(
+            intrinsic_value=iv / shares_outstanding if shares_outstanding > 0 else iv,
+            valuation_path="E",
+            key_assumptions={"roic": roic, "retention": retention, "growth": growth,
+                             "discount_rate": discount_rate},
+            status="valued",
+        )
+
+    # 路径 F: 历史增速，封顶 10%
+    if hist_growth is not None and hist_growth > 0:
+        capped_growth = min(hist_growth, 0.10)
+        iv = forward_dcf(oe, capped_growth, discount_rate, payout)
+        return DCFResult(
+            intrinsic_value=iv / shares_outstanding if shares_outstanding > 0 else iv,
+            valuation_path="F",
+            key_assumptions={"hist_growth": hist_growth, "capped_growth": capped_growth,
+                             "discount_rate": discount_rate},
+            status="valued",
+        )
+
+    # 路径 G: 零增长永续（最保守底线）
+    iv = oe / discount_rate
+    return DCFResult(
+        intrinsic_value=iv / shares_outstanding if shares_outstanding > 0 else iv,
+        valuation_path="G",
+        key_assumptions={"growth": 0.0, "discount_rate": discount_rate},
+        status="valued",
+    )
 
 
 def reverse_dcf(
@@ -147,12 +226,15 @@ def reverse_dcf(
     discount_rate: float,
     shares_outstanding: float,
     years: int = PROJECTION_YEARS,
+    market: str = "US",
 ) -> ReverseDCFResult:
     """反向 DCF：从股价反推市场隐含增速。
 
     求解 g 使得 DCF(OE, g, r) = current_price × shares_outstanding
     使用二分法求解。
     """
+    discount_rate = get_discount_rate(discount_rate, market)
+
     if current_owner_earnings <= 0 or shares_outstanding <= 0 or discount_rate <= 0:
         return ReverseDCFResult(status="not_computed")
 
