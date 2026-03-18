@@ -203,18 +203,18 @@ def assess_earnings(ctx: ComputeContext) -> EarningsResult:
                 for s in r.active_investments:
                     if s.name == "CAPEX":
                         s.healthy = True
-                        s.observation += f"，增量 ROIC = {inc_roic:.0%} → 投资有回报"
+                        s.observation += f"，ROIC = {inc_roic:.0%} → 投资有回报"
             elif inc_roic > 0:
                 ret.verdict = "pending"
                 for s in r.active_investments:
                     if s.name == "CAPEX":
-                        s.observation += f"，增量 ROIC = {inc_roic:.0%} → 回报一般"
+                        s.observation += f"，ROIC = {inc_roic:.0%} → 回报一般"
             else:
                 ret.verdict = "bad"
                 for s in r.active_investments:
                     if s.name == "CAPEX":
                         s.healthy = False
-                        s.observation += f"，增量 ROIC = {inc_roic:.0%} → 投资没回报"
+                        s.observation += f"，ROIC = {inc_roic:.0%} → 投资没回报"
         else:
             ret.verdict = "no_data"
         r.investment_returns.append(ret)
