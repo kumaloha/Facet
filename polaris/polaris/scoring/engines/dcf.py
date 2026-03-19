@@ -96,8 +96,25 @@ DEFAULT_ERP = 0.05
 DISCOUNT_RATE_FLOOR = 0.04
 
 
-def get_discount_rate(risk_free_rate: float, market: str = "US") -> float:
-    """计算折现率 = 无风险利率 + 市场 ERP，有下限保护。"""
+def get_discount_rate(
+    risk_free_rate: float,
+    market: str = "US",
+    certainty: str = "normal",
+) -> float:
+    """计算折现率，有下限保护。
+
+    certainty 分三档:
+      - "high": 巴菲特级确定性 — 护城河 deep/extreme + 盈余/可预测/诚信全通过。
+                现金流如同债券票息，用无风险利率即可。
+      - "normal": 有一定护城河但确定性不够极致 — 加完整 ERP。
+      - "low": 护城河弱/不确定性高 — 加完整 ERP（不做额外惩罚，
+               因为巴菲特对这类公司根本不会估值）。
+    """
+    if certainty == "high":
+        # 巴菲特法: 现金流高度确定，用无风险利率
+        # 仍然有下限保护，避免零利率/负利率环境下折现率失真
+        return max(risk_free_rate, DISCOUNT_RATE_FLOOR)
+
     erp = MARKET_ERP.get(market.upper(), DEFAULT_ERP)
     dr = risk_free_rate + erp
     return max(dr, DISCOUNT_RATE_FLOOR)
@@ -109,6 +126,7 @@ def compute_intrinsic_value(
     discount_rate: float,
     shares_outstanding: float,
     market: str = "US",
+    certainty: str = "normal",
 ) -> DCFResult:
     """根据可用 guidance 选择计算路径。
 
@@ -116,10 +134,11 @@ def compute_intrinsic_value(
     - A-D: 有 guidance
     - E-G: 无 guidance fallback
 
-    折现率按市场调整（无风险利率 + ERP），有下限保护。
+    certainty="high" 时用无风险利率（巴菲特标的），
+    否则加 ERP（普通标的）。
     """
-    # 按市场调整折现率
-    discount_rate = get_discount_rate(discount_rate, market)
+    # 按确定性等级调整折现率
+    discount_rate = get_discount_rate(discount_rate, market, certainty)
 
     oe = features.get("l0.company.owner_earnings")
     inc_roic = features.get("l0.company.incremental_roic")
@@ -239,13 +258,14 @@ def reverse_dcf(
     shares_outstanding: float,
     years: int = PROJECTION_YEARS,
     market: str = "US",
+    certainty: str = "normal",
 ) -> ReverseDCFResult:
     """反向 DCF：从股价反推市场隐含增速。
 
     求解 g 使得 DCF(OE, g, r) = current_price × shares_outstanding
     使用二分法求解。
     """
-    discount_rate = get_discount_rate(discount_rate, market)
+    discount_rate = get_discount_rate(discount_rate, market, certainty)
 
     if current_owner_earnings <= 0 or shares_outstanding <= 0 or discount_rate <= 0:
         return ReverseDCFResult(status="not_computed")

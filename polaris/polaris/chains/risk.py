@@ -122,11 +122,36 @@ def assess_risk(ctx: ComputeContext, home_market: str = "") -> RiskResult:
     # ══════════════════════════════════════════════════════════
 
     ds = ctx.get_downstream_segments()
-    # 泛称过滤：这些名字是业务线/品类，不是具名客户
+    # 泛称过滤：这些名字是业务线/品类/渠道/用户群体，不是具名客户
     GENERIC_NAMES = {"消费者", "用户", "其他", "others", "other", "mass market",
                      "会员", "零售", "批发", "企业", "政府", "smb",
                      "汽车", "电池", "储能", "零部件", "手机", "电商",
-                     "国内", "国际", "线上", "线下", "个人", "机构"}
+                     "国内", "国际", "线上", "线下", "个人", "机构",
+                     # 行业/品类泛称
+                     "广告", "广告主", "游戏", "玩家", "数据中心", "云",
+                     "服务", "金融", "科技", "物流", "本地生活",
+                     "经销商", "直销", "渠道", "合作伙伴", "瓶装",
+                     "设备", "输变电", "新能源", "多晶硅", "光伏",
+                     "新材料", "煤炭", "矿", "冶炼", "贸易",
+                     # 英文泛称
+                     "advertiser", "consumer", "gamer", "player",
+                     "data center", "cloud", "enterprise", "retail",
+                     "distributor", "dealer", "wholesale", "oem",
+                     # 产品名/收入类型
+                     "iphone", "mac", "ipad", "gpu", "服务收入",
+                     "可穿戴", "wearable", "subscription",
+                     # 大宗商品/资源/能源
+                     "原油", "天然气", "石油", "煤", "铜", "金", "锌", "锂",
+                     "化工", "中游", "运输", "碳捕获", "ngl",
+                     "oil", "gas", "crude", "chemical", "midstream",
+                     "pipeline", "carbon", "refining", "mineral",
+                     # 金融/支付/保险
+                     "持卡人", "商户", "借款人", "储户", "投保人",
+                     "cardholder", "merchant", "borrower", "depositor",
+                     "policyholder", "patient", "患者",
+                     # 餐饮/加盟
+                     "加盟", "自营", "门店", "franchise", "store",
+                     "配送", "外卖", "delivery"}
 
     has_named_customer = False
     max_named_pct = 0.0
@@ -139,8 +164,9 @@ def assess_risk(ctx: ComputeContext, home_market: str = "") -> RiskResult:
                 continue
             # 判断是否为具名客户（不在泛称列表中）
             is_generic = any(g in name for g in GENERIC_NAMES)
-            # 如果名字包含"产品"/"业务"/"部门"等也算泛称
-            segment_kw = ["产品", "业务", "部门", "segment", "division", "line"]
+            # 如果名字包含"产品"/"业务"/"部门"/"收入"/"客户"等也算泛称
+            segment_kw = ["产品", "业务", "部门", "收入", "客户", "segment",
+                          "division", "line", "revenue", "income", "category"]
             if any(kw in name for kw in segment_kw):
                 is_generic = True
             if not is_generic:
@@ -167,28 +193,125 @@ def assess_risk(ctx: ComputeContext, home_market: str = "") -> RiskResult:
             f"供应商 sole source 占比 {sole_source:.0%}"))
 
     # ══════════════════════════════════════════════════════════
-    #  关键人依赖
+    #  关键人依赖 — 三层抗替换模型
     # ══════════════════════════════════════════════════════════
+    # 如果明天 CEO 被公交车撞了，公司还能运转吗？
+    #
+    #   层 1: 品牌/产品 — 消费者买的是品牌不是 CEO（最强）
+    #         茅台、可口可乐换谁当家都照样卖酒卖饮料
+    #   层 2: 公司文化/制度 — 流程、文化、激励机制能延续（强）
+    #         伯克希尔的去中心化、腾讯的赛马制
+    #   层 3: 个人能力 — 战略/执行靠一个人推动（脆弱）
+    #         OXY（Hollub）、英伟达（Jensen）
+    #
+    # 品牌驱动也不是万能保护——如果新 CEO 搞帝国建设，品牌在但纪律崩。
+    # 所以品牌层只免除"护城河依赖个人"的风险，不免除"资本纪律依赖个人"。
 
     mgmt_own = _feat(ctx, "mgmt_ownership_pct")
     if mgmt_own is not None and mgmt_own > 30:
         r.risks.append(RiskItem("key_person", "significant",
-            f"创始人/CEO 持股 {mgmt_own:.0%}，关键人依赖"))
+            f"创始人/CEO 持股 {mgmt_own:.1f}%，关键人依赖"))
+
+    # ── 判断护城河的抗替换层级 ──
+
+    # 层 1: 品牌/成瘾品/基础设施 → 护城河不依赖个人
+    brand_driven_categories = {"liquor", "beverage", "tobacco", "alcohol", "beer",
+                               "wine", "coffee", "insurance", "utility", "payment",
+                               "operating_system"}
+    ds_cats = set()
+    if not ds.empty and "product_category" in ds.columns:
+        ds_cats = set(ds["product_category"].dropna().str.lower().unique())
+    is_brand_driven = bool(ds_cats & brand_driven_categories)
+
+    # 层 2: 公司文化信号 — 高管团队稳定 + 多元收入 = 不是一人公司
+    exec_changes = ctx.get_executive_changes()
+    has_successor_signal = False
+    high_turnover = False
+    if not exec_changes.empty and "change_type" in exec_changes.columns:
+        joined = exec_changes[exec_changes["change_type"] == "joined"]
+        departed = exec_changes[exec_changes["change_type"] == "departed"]
+        has_successor_signal = len(joined) >= 1
+        high_turnover = len(departed) >= 3  # 大量离职 = 文化不稳定
+
+    # 多业务线 = 去中心化信号（不是单一赌注）
+    n_segments = len(ds_cats)
+    is_diversified = n_segments >= 3
+
+    # 综合判断文化层
+    has_culture_resilience = (has_successor_signal or is_diversified) and not high_turnover
+
+    # ── 关键人风险评估 ──
+    fulfillment = _feat(ctx, "narrative_fulfillment_rate")
+
+    if fulfillment is not None and fulfillment > 0.7:
+        if is_brand_driven and has_culture_resilience:
+            # 品牌 + 文化双保险 → 不标风险
+            pass
+        elif is_brand_driven and not has_culture_resilience:
+            # 品牌在但文化/制度弱 → 轻微风险
+            # 换人后品牌不会消失，但资本纪律可能走样
+            r.risks.append(RiskItem("key_person", "moderate",
+                f"品牌驱动型生意，但无明确继任计划/文化制度保障 → "
+                f"换人后护城河在，但资本纪律可能变"))
+        elif not is_brand_driven and has_culture_resilience:
+            # 非品牌但有文化/制度缓冲 → 中等风险
+            r.risks.append(RiskItem("key_person", "moderate",
+                f"非品牌驱动（成功依赖执行），"
+                f"但有文化/继任缓冲"))
+        elif not is_brand_driven:
+            # 非品牌 + 无文化保障 → 显著风险
+            detail_parts = [f"叙事兑现 {fulfillment:.0%}"]
+            if not has_successor_signal:
+                detail_parts.append("无继任信号")
+            if not is_diversified:
+                detail_parts.append("业务集中")
+            r.risks.append(RiskItem("key_person", "significant",
+                f"管理层优秀但成功高度依赖个人: {'; '.join(detail_parts)}"))
 
     # ══════════════════════════════════════════════════════════
     #  财务结构
     # ══════════════════════════════════════════════════════════
+    # 特殊业务需豁免:
+    #   - 负权益公司（回购导致）的 D/E 无意义
+    #   - 银行/保险/支付的利息支出是经营成本
+    equity_val = None
+    fli = ctx.get_financial_line_items()
+    if not fli.empty:
+        eq_rows = fli[fli["item_key"] == "shareholders_equity"]
+        if not eq_rows.empty:
+            equity_val = float(eq_rows.iloc[0]["value"])
+    is_financial = bool(ds_cats & {"banking", "insurance", "payment"})
 
     de = _feat(ctx, "debt_to_equity")
-    if de is not None and de > 5.0:
-        r.risks.append(RiskItem("financial", "catastrophic",
-            f"D/E = {de:.1f}，极高杠杆"))
-    elif de is not None and de > 3.0:
-        r.risks.append(RiskItem("financial", "significant",
-            f"D/E = {de:.1f}，高杠杆"))
+    # D/E: 负权益或极低正权益（回购导致）的公司，D/E 失真，跳过
+    # 判断方法: 如果权益为负，或 D/E > 10 且公司在大量回购，大概率是回购导致的
+    sy = _feat(ctx, "shareholder_yield")
+    # 权益失真的判断:
+    #   - 权益为负（回购/收购导致）
+    #   - D/E > 10 且在大量回购（sy > 0.3）
+    #   - 权益极低（< 总资产 5%）— 刚从负转正的过渡期（如甲骨文）
+    ta_val = None
+    ta_rows = fli[fli["item_key"] == "total_assets"] if not fli.empty else pd.DataFrame()
+    if not ta_rows.empty:
+        ta_val = float(ta_rows.iloc[0]["value"])
+    equity_tiny = (equity_val is not None and ta_val is not None and ta_val > 0
+                   and equity_val / ta_val < 0.05)
+    equity_distorted = (
+        (equity_val is not None and equity_val <= 0) or
+        (de is not None and de > 10 and sy is not None and sy > 0.3) or
+        equity_tiny
+    )
+    if de is not None and not equity_distorted and equity_val is not None and equity_val > 0:
+        if de > 5.0:
+            r.risks.append(RiskItem("financial", "catastrophic",
+                f"D/E = {de:.1f}，极高杠杆"))
+        elif de > 3.0:
+            r.risks.append(RiskItem("financial", "significant",
+                f"D/E = {de:.1f}，高杠杆"))
 
     ic = _feat(ctx, "interest_coverage")
-    if ic is not None and ic < 1.5:
+    # 利息覆盖率: 银行/保险/支付豁免（利息是经营成本）
+    if ic is not None and ic < 1.5 and not is_financial:
         r.risks.append(RiskItem("financial", "catastrophic",
             f"利息覆盖率 = {ic:.1f}，可能无法偿债"))
 

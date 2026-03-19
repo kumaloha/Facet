@@ -217,7 +217,8 @@ def _pricing_test(ctx: ComputeContext) -> PricingTestResult:
             peer_gm = peers[peers["metric"] == "gross_margin"]["value"].dropna()
             if not peer_gm.empty:
                 peer_avg = peer_gm.mean()
-                if gm > peer_avg + 0.10:
+                if gm > peer_avg + 0.05:
+                    # 毛利率显著高于同行 → 推断售价高于竞品（品牌溢价）
                     pt.more_expensive = True
                     pt.evidence.append(_ev("peer_financials",
                         f"毛利率 {gm:.0%} 远高于同行 {peer_avg:.0%}，推断售价高于竞品",
@@ -304,11 +305,30 @@ def _check_intangible(ctx: ComputeContext, pt: PricingTestResult) -> MoatCategor
         if not patent_events.empty:
             patent_found = True
             for _, row in patent_events.iterrows():
-                patent.evidence.append(_ev("competitive_dynamics",
-                    f"专利事件: {row.get('event_description', '')}",
-                    False if row["event_type"] == "patent_expiration" else None,
-                    EvidenceStrength.LEADING))
-    # TODO: patent_events 专用表
+                outcome = str(row.get("outcome_description", ""))
+                if row["event_type"] == "patent_expiration":
+                    patent.evidence.append(_ev("competitive_dynamics",
+                        f"专利过期: {row.get('event_description', '')}",
+                        False, EvidenceStrength.LEADING))
+                elif row["event_type"] == "patent_challenge":
+                    # 挑战结果: 对手输了 = 专利有效 = 正面; 赢了 = 专利失效 = 负面
+                    defended_kw = ["有效", "裁定", "支付", "维持", "valid", "upheld",
+                                   "pay", "license", "仍需"]
+                    lost_kw = ["无效", "撤销", "失效", "invalid", "revoked"]
+                    if any(kw in outcome for kw in defended_kw):
+                        patent.evidence.append(_ev("competitive_dynamics",
+                            f"专利挑战被击退: {outcome}",
+                            True, EvidenceStrength.BEHAVIORAL))
+                        patent.detected = True
+                        patent.detail = "专利经受住挑战，壁垒有效"
+                    elif any(kw in outcome for kw in lost_kw):
+                        patent.evidence.append(_ev("competitive_dynamics",
+                            f"专利被挑战成功: {outcome}",
+                            False, EvidenceStrength.BEHAVIORAL))
+                    else:
+                        patent.evidence.append(_ev("competitive_dynamics",
+                            f"专利挑战中: {row.get('event_description', '')}",
+                            None, EvidenceStrength.LEADING))
     if not patent_found:
         _no_data(patent, "patent_events", "专利")
     cat.subtypes.append(patent)
@@ -624,6 +644,11 @@ def _check_cost_advantage(ctx: ComputeContext, pt: PricingTestResult) -> MoatCat
     cat = MoatCategory(name="成本优势")
     cd = ctx.get_competitive_dynamics()
 
+    # 公司整体利润率（用于间接 fallback 和涨价测试路由）
+    gm = _feat(ctx, "gross_margin")
+    op_margin = _feat(ctx, "operating_margin")
+    nm = _feat(ctx, "net_margin")
+
     # ── 涨价测试路由: 成本优势型定价 ──
     if pt.routes_to == "cost_advantage":
         pricing_cost = MoatSubtype(name="定价能力（成本优势型）")
@@ -642,25 +667,87 @@ def _check_cost_advantage(ctx: ComputeContext, pt: PricingTestResult) -> MoatCat
                     f"行业低谷: {row.get('event_description', '')}",
                     None, EvidenceStrength.BEHAVIORAL))
                 outcome = str(row.get("outcome_description", ""))
-                survived_kw = ["盈利", "正常", "扩张", "收购", "profitable", "survived"]
+                survived_kw = ["盈利", "正常", "扩张", "收购", "存活", "活下来", "偿债",
+                               "profitable", "survived", "deleverag", "repaid"]
                 if any(kw in outcome for kw in survived_kw):
                     survival.evidence.append(_ev("competitive_dynamics",
                         f"结果: {outcome}", True, EvidenceStrength.BEHAVIORAL))
             if any(e.supports is True for e in survival.evidence):
                 survival.detected = True
-                survival.detail = "行业低谷时仍盈利，成本优势确认"
+                survival.detail = "行业低谷存活，成本优势确认"
     if not survival.evidence:
         _no_data(survival, "competitive_dynamics", "行业低谷")
     cat.subtypes.append(survival)
 
     # ── 同行对比 ──
+    # 如果 peer_financials 有 segment 字段 → 按业务线分别比
+    # 如果没有 → 用公司整体指标比（向后兼容）
     peer_cmp = MoatSubtype(name="同行对比")
     peers = ctx.get_peer_financials()
-    gm = _feat(ctx, "gross_margin")
-    op_margin = _feat(ctx, "operating_margin")
-    nm = _feat(ctx, "net_margin")
+    ds = ctx.get_downstream_segments()
 
-    if not peers.empty and "metric" in peers.columns:
+    has_segment_peers = (not peers.empty and "segment" in peers.columns
+                         and peers["segment"].notna().any())
+
+    if has_segment_peers:
+        # ── 分业务线对比 ──
+        # 每条业务线用自己的 segment_gross_margin vs 该业务线的同行
+        seg_margins = {}
+        if not ds.empty and "segment_gross_margin" in ds.columns and "customer_name" in ds.columns:
+            for _, row in ds.iterrows():
+                name = row.get("customer_name", "")
+                sgm = row.get("segment_gross_margin")
+                pct = row.get("revenue_pct", 0)
+                if sgm is not None and name:
+                    seg_margins[name] = (sgm, pct)
+
+        segments = peers["segment"].dropna().unique()
+        seg_wins = 0
+        seg_losses = 0
+        for seg in segments:
+            seg_peers = peers[peers["segment"] == seg]
+            seg_gm_peers = seg_peers[seg_peers["metric"] == "gross_margin"]["value"].dropna()
+            if seg_gm_peers.empty:
+                continue
+            peer_avg = seg_gm_peers.mean()
+            peer_names = list(dict.fromkeys(
+                seg_peers[seg_peers["metric"] == "gross_margin"]["peer_name"].tolist()))
+
+            # 用该业务线自己的毛利率
+            my_val = seg_margins.get(seg, (None, 0))[0] if seg in seg_margins else None
+            pct = seg_margins.get(seg, (0, 0))[1] if seg in seg_margins else 0
+
+            if my_val is None:
+                continue
+
+            diff = my_val - peer_avg
+            if diff > 0.03:
+                peer_cmp.evidence.append(_ev("peer_financials",
+                    f"[{seg} {pct:.0%}] 毛利率 {my_val:.1%} vs 同行 {peer_avg:.1%}"
+                    f"（+{diff:.1%}，{', '.join(peer_names)}）",
+                    True, EvidenceStrength.STRUCTURAL))
+                seg_wins += 1
+            elif diff < -0.03:
+                peer_cmp.evidence.append(_ev("peer_financials",
+                    f"[{seg} {pct:.0%}] 毛利率 {my_val:.1%} vs 同行 {peer_avg:.1%}"
+                    f"（{diff:+.1%}，{', '.join(peer_names)}）",
+                    False, EvidenceStrength.STRUCTURAL))
+                seg_losses += 1
+            else:
+                peer_cmp.evidence.append(_ev("peer_financials",
+                    f"[{seg} {pct:.0%}] 毛利率 {my_val:.1%} vs 同行 {peer_avg:.1%}（持平）",
+                    None, EvidenceStrength.STRUCTURAL))
+
+        if seg_wins > seg_losses:
+            peer_cmp.detected = True
+            peer_cmp.detail = f"分业务线对比: {seg_wins} 个领先，{seg_losses} 个落后"
+        elif seg_losses > 0:
+            peer_cmp.detail = f"分业务线对比: {seg_wins} 个领先，{seg_losses} 个落后"
+    elif not peers.empty and "metric" in peers.columns:
+        # ── 整体对比（向后兼容）──
+        gm = _feat(ctx, "gross_margin")
+        op_margin = _feat(ctx, "operating_margin")
+        nm = _feat(ctx, "net_margin")
         for metric_name, my_val, label in [
             ("gross_margin", gm, "毛利率"),
             ("operating_margin", op_margin, "营业利润率"),
@@ -857,10 +944,31 @@ def assess_moat(ctx: ComputeContext) -> MoatResult:
     ]
 
     depth = _assess_depth(categories, anti)
+
+    # ── 市场份额下滑 → 护城河正在瓦解，降级深度 ──
+    ms = ctx.get_market_share_data()
+    share_declining = False
+    share_decline_pct = 0.0
+    if not ms.empty and "share" in ms.columns:
+        shares = ms["share"].dropna()
+        if len(shares) >= 2:
+            share_decline_pct = shares.iloc[-1] - shares.iloc[0]
+            if share_decline_pct <= -0.049:
+                share_declining = True
+
+    if share_declining and depth in ("extreme", "deep"):
+        # 份额大幅下滑 → 护城河在瓦解，降一级
+        depth = "deep" if depth == "extreme" else "shallow"
+        anti.append(_ev("market_share_data",
+            f"市占率下滑 {share_decline_pct:+.1%}，护城河正在瓦解",
+            False, EvidenceStrength.BEHAVIORAL))
+
     detected = [name for c in categories for name in c.detected_names]
 
     if detected:
         summary = f"护城河: {', '.join(detected)} (深度: {depth})"
+        if share_declining:
+            summary += f"（但份额下滑 {share_decline_pct:+.1%}，护城河在弱化）"
     else:
         has_signal = any(sub.detail for cat in categories for sub in cat.subtypes)
         summary = "有间接信号但缺行为证据确认" if has_signal else "未检测到护城河"

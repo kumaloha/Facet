@@ -73,7 +73,12 @@ def consecutive_margin_expansion(ctx: ComputeContext) -> FeatureResult | None:
 
 @feature("l0.company.incremental_roic", FeatureLevel.L0, "company")
 def incremental_roic(ctx: ComputeContext) -> FeatureResult | None:
-    """增量 ROIC = Δ operating_income / Δ invested_capital"""
+    """增量 ROIC = Δ operating_income / Δ invested_capital
+
+    周期正常化: 用前半段平均 OI vs 后半段平均 OI，而不是首尾两点。
+    这样可以平滑大宗商品价格波动（如油价从 $95 跌到 $65），
+    避免周期性行业被误判为"投资没回报"。
+    """
     oi = get_item_series(ctx, "operating_income", 8)
     ta = get_item_series(ctx, "total_assets", 8)
     cl = get_item_series(ctx, "current_liabilities", 8)
@@ -86,10 +91,27 @@ def incremental_roic(ctx: ComputeContext) -> FeatureResult | None:
     oi_s = oi[common]
     ic = ta[common] - cl[common] - cash[common]
 
-    delta_oi = oi_s.iloc[-1] - oi_s.iloc[0]
-    delta_ic = ic.iloc[-1] - ic.iloc[0]
+    if len(common) >= 4:
+        # 4 期以上: 用前半段均值 vs 后半段均值，平滑周期波动
+        mid = len(common) // 2
+        avg_oi_early = oi_s.iloc[:mid].mean()
+        avg_oi_late = oi_s.iloc[mid:].mean()
+        avg_ic_early = ic.iloc[:mid].mean()
+        avg_ic_late = ic.iloc[mid:].mean()
+        delta_oi = avg_oi_late - avg_oi_early
+        delta_ic = avg_ic_late - avg_ic_early
+    else:
+        # 2-3 期: 退回首尾对比
+        delta_oi = oi_s.iloc[-1] - oi_s.iloc[0]
+        delta_ic = ic.iloc[-1] - ic.iloc[0]
+
     if delta_ic == 0:
         return None
+    # ΔIC ≤ 0 说明公司在释放资本（现金堆积/轻资产），ROIC 公式不适用
+    # 如果同时 ΔOI > 0 → 用更少的资本赚更多的钱，是极好的信号
+    # 返回一个大正数表示资本效率极高，而不是荒谬的负数
+    if delta_ic < 0 and delta_oi > 0:
+        return R(value=1.0, detail="IC 在缩小而 OI 在增长，资本效率极高")
     return R(value=delta_oi / delta_ic)
 
 

@@ -108,6 +108,8 @@ def assess_distribution(ctx: ComputeContext) -> DistributionResult:
             # 验证留存回报: 用 incremental ROIC 近似
             inc_roic = _feat(ctx, "incremental_roic")
             roe = _feat(ctx, "roe")
+            roe_vol = _feat(ctx, "roe_stability")
+            is_cyclical = roe_vol is not None and roe_vol > 0.08
 
             if inc_roic is not None:
                 r.retained_return = inc_roic
@@ -121,6 +123,12 @@ def assess_distribution(ctx: ComputeContext) -> DistributionResult:
                     r.retention_detail = (
                         f"留存 {r.retained:,.0f}，增量 ROIC = {inc_roic:.0%}"
                         f" → 回报一般")
+                elif is_cyclical:
+                    # 周期性行业 ROIC 为负可能只是周期低谷
+                    r.retention_good = None
+                    r.retention_detail = (
+                        f"留存 {r.retained:,.0f}，增量 ROIC = {inc_roic:.0%}"
+                        f"（周期性行业，需看完整周期）")
                 else:
                     r.retention_good = False
                     r.retention_detail = (
@@ -183,6 +191,11 @@ def assess_distribution(ctx: ComputeContext) -> DistributionResult:
         # 没分钱 + 留存还在毁灭价值
         r.verdict = "breaks"
         r.summary = "没有真金白银到股东 + 留存在毁灭价值"
+    elif not r.cash_to_shareholder and r.retention_good is True:
+        # Berkshire/Amazon 模式: 不分钱但每块钱留存都在创造价值
+        # 巴菲特: "如果公司能以高回报再投资，不分红是对股东最好的选择"
+        r.verdict = "holds"
+        r.summary = f"不分红不回购，全部留存再投资。{r.retention_detail}"
     elif not r.cash_to_shareholder and r.retention_good is not True:
         # 没分钱 + 留存回报不确定
         if severe_flags >= 1:

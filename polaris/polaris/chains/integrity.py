@@ -74,17 +74,34 @@ def assess_integrity(ctx: ComputeContext) -> IntegrityResult:
     # ══════════════════════════════════════════════════════════
 
     # 债务问题
+    # 判断特殊业务类型: 负权益公司（回购导致）+ 银行/保险/支付
+    ds = ctx.get_downstream_segments()
+    ds_cats = set()
+    if not ds.empty and "product_category" in ds.columns:
+        ds_cats = set(ds["product_category"].dropna().str.lower().unique())
+    is_financial = bool(ds_cats & {"banking", "insurance", "payment"})
+
+    equity_val = None
+    fli = ctx.get_financial_line_items()
+    if not fli.empty:
+        eq_rows = fli[fli["item_key"] == "shareholders_equity"]
+        if not eq_rows.empty:
+            equity_val = float(eq_rows.iloc[0]["value"])
+
     de = _feat(ctx, "debt_to_equity")
-    if de is not None and de > 3.0:
+    if de is not None and de > 3.0 and (equity_val is None or equity_val > 0):
         r.issues_from_financials.append(f"高杠杆: D/E = {de:.1f}")
 
     ic = _feat(ctx, "interest_coverage")
-    if ic is not None and ic < 2.0:
+    if ic is not None and ic < 2.0 and not is_financial:
         r.issues_from_financials.append(f"偿债压力: 利息覆盖率 = {ic:.1f}")
 
     net_debt_ebitda = _feat(ctx, "net_debt_to_ebitda")
     if net_debt_ebitda is not None and net_debt_ebitda > 5.0:
-        r.issues_from_financials.append(f"净债务/EBITDA = {net_debt_ebitda:.1f}")
+        if equity_val is not None and equity_val < 0 and net_debt_ebitda < 7.0:
+            pass  # 负权益公司合理杠杆
+        else:
+            r.issues_from_financials.append(f"净债务/EBITDA = {net_debt_ebitda:.1f}")
 
     # 现金流问题
     ocf_ni = _feat(ctx, "ocf_to_net_income")
@@ -130,29 +147,53 @@ def assess_integrity(ctx: ComputeContext) -> IntegrityResult:
     #  3. 管理层承认的
     # ══════════════════════════════════════════════════════════
 
+    # 管理层回应分两类:
+    #   有效承认: response_quality in (strong, adequate) 或有 action_plan
+    #   敷衍回应: response_quality = defensive 且无 action_plan
+    #     → "我知道但我不打算改" ≈ 没承认
+    effective_acks = []
+    dismissive_acks = []
+
     ma = ctx.get_management_acknowledgments()
     if not ma.empty and "issue_description" in ma.columns:
         for _, row in ma.iterrows():
             desc = row["issue_description"]
             quality = row.get("response_quality", "")
             has_plan = row.get("has_action_plan", False)
-            r.acknowledged.append(
-                f"{desc}" + (f" [{quality}]" if quality else "") +
-                (" (有改进计划)" if has_plan else ""))
+            label = (f"{desc}" + (f" [{quality}]" if quality else "") +
+                     (" (有改进计划)" if has_plan else ""))
+
+            if quality == "defensive" and not has_plan:
+                # "我知道但我不改" = 敷衍，不算有效承认
+                dismissive_acks.append(label)
+            else:
+                effective_acks.append(label)
+
+    r.acknowledged = effective_acks
 
     # ══════════════════════════════════════════════════════════
     #  4. 差集: 藏了什么
     # ══════════════════════════════════════════════════════════
+    # 只比对第三方发现的问题（外部事件、诉讼、监管调查）。
+    # 财报指标（issues_from_financials）已经在公开报表中披露，
+    # 不需要管理层额外"承认"——10-K/年报本身就是披露。
+    # 差集 = 第三方发现但管理层没回应的。
 
-    if r.all_known_issues and r.acknowledged:
-        ack_text = " ".join(r.acknowledged).lower()
-        for issue in r.all_known_issues:
+    # 差集只用有效承认来匹配，敷衍回应不算
+    all_valid_ack_text = " ".join(r.acknowledged).lower() if r.acknowledged else ""
+
+    if r.issues_from_third_party and (r.acknowledged or dismissive_acks):
+        for issue in r.issues_from_third_party:
             keywords = [w for w in issue.lower().split() if len(w) > 2]
-            mentioned = any(kw in ack_text for kw in keywords[:3]) if keywords else False
+            mentioned = any(kw in all_valid_ack_text for kw in keywords[:3]) if keywords else False
             if not mentioned:
                 r.hidden.append(issue)
-    elif r.all_known_issues and not r.acknowledged:
-        # 有问题但完全没有管理层回应数据
+        # 敷衍回应对应的问题也算隐瞒 — "我知道但不打算改"和没说一样
+        if dismissive_acks:
+            r.hidden.append(f"敷衍回应 {len(dismissive_acks)} 条: "
+                            + "; ".join(d.split("[")[0].strip() for d in dismissive_acks))
+    elif r.issues_from_third_party and not r.acknowledged and not dismissive_acks:
+        # 有第三方问题但完全没有管理层回应数据
         pass  # 不能判定为藏，可能是数据缺失
 
     # ══════════════════════════════════════════════════════════

@@ -107,13 +107,18 @@ def assess_character(ctx: ComputeContext) -> CharacterResult:
             rational_signals += 1
 
     inc_roic = _feat(ctx, "incremental_roic")
+    roe_vol = _feat(ctx, "roe_stability")
+    is_cyclical = roe_vol is not None and roe_vol > 0.08
+
     if inc_roic is not None:
         if inc_roic > 0.15:
             r.capital_evidence.append(f"ROIC = {inc_roic:.0%}，资本配置有效")
             rational_signals += 1
-        elif inc_roic < 0:
+        elif inc_roic < 0 and not is_cyclical:
             r.capital_evidence.append(f"ROIC = {inc_roic:.0%}，投资在毁灭价值")
             irrational_signals += 1
+        elif inc_roic < 0 and is_cyclical:
+            r.capital_evidence.append(f"ROIC = {inc_roic:.0%}（周期性行业，需看完整周期）")
 
     r.capital_rational = rational_signals > irrational_signals if (rational_signals + irrational_signals) > 0 else None
     if r.capital_rational is True:
@@ -187,13 +192,31 @@ def assess_character(ctx: ComputeContext) -> CharacterResult:
     elif r.capital_rational is False:
         weak_signals += 1
 
-    if r.mission_consistent is True:
+    # mission_consistent 只有在言行也一致时才加分
+    # 有很多叙事但一半 miss = 话说得漂亮但做不到，不该加分
+    if r.mission_consistent is True and r.words_match_actions is True:
         strong_signals += 1
+    elif r.mission_consistent is True and r.words_match_actions is False:
+        weak_signals += 1  # 说得多做不到 = 减分
 
+    # 持股 > 5% 一般是利益绑定，但要排除：
+    # 创始人通过双重股权结构控制公司 = 权力集中，不是利益对齐
+    # 判断: 如果叙事兑现率低（< 0.5）+ 高持股 = 有权力但不负责
     if own is not None and own > 5:
-        strong_signals += 1
+        if fr is not None and fr < 0.5:
+            # 持股高但承诺兑现率低 → 有权力没纪律
+            weak_signals += 1
+            r.culture_signals.append(
+                f"高持股 {own:.1f}% 但叙事兑现率仅 {fr:.0%} → 有权力但缺纪律")
+        else:
+            strong_signals += 1
 
-    if weak_signals >= 2:
+    # 一票否决: 投资回报为负 → 不管其他信号多好，信念都存疑
+    # 但周期性行业（ROE 波动大）的负 ROIC 可能只是周期低谷，不直接否决
+    if inc_roic is not None and inc_roic < 0 and not is_cyclical:
+        r.conviction = "weak"
+        r.conviction_detail = f"投资回报为负 (ROIC={inc_roic:.0%})，资金在毁灭价值"
+    elif weak_signals >= 2:
         r.conviction = "weak"
         r.conviction_detail = "多项负面信号，信念存疑"
     elif strong_signals >= 3:

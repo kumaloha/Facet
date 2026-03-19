@@ -203,8 +203,20 @@ def assess_earnings(ctx: ComputeContext) -> EarningsResult:
     #  2. 验证主动投资的回报
     # ══════════════════════════════════════════════════════════
 
-    # CAPEX 回报: incremental ROIC
+    # CAPEX 回报验证 — 两条验证通道:
+    #   通道 1: incremental ROIC（量化）
+    #   通道 2: 叙事兑现率（定性）— ROIC 不可靠时的后备
+    #
+    # 核心洞察: ROIC 为负不等于投资没回报。
+    # 同样是 ROIC 为负:
+    #   - OXY 花 $7B 买 $40 盈亏平衡的 Permian 油田 = 未来发动机
+    #   - Intel 花 $20B 建良率不达标的代工厂 = 填不满的窟窿
+    # 区别在于: 投资的叙事是否在兑现。
     inc_roic = _feat(ctx, "incremental_roic")
+    roe_vol = _feat(ctx, "roe_stability")
+    is_cyclical = roe_vol is not None and roe_vol > 0.08
+    fulfillment = _feat(ctx, "narrative_fulfillment_rate")
+
     if capex is not None:
         ret = InvestmentReturn(investment_type="capex", invested=capex)
         if inc_roic is not None:
@@ -212,7 +224,6 @@ def assess_earnings(ctx: ComputeContext) -> EarningsResult:
             ret.return_value = inc_roic
             if inc_roic > 0.15:
                 ret.verdict = "good"
-                # 标记 CAPEX 为健康
                 for s in r.active_investments:
                     if s.name == "CAPEX":
                         s.healthy = True
@@ -222,7 +233,31 @@ def assess_earnings(ctx: ComputeContext) -> EarningsResult:
                 for s in r.active_investments:
                     if s.name == "CAPEX":
                         s.observation += f"，ROIC = {inc_roic:.0%} → 回报一般"
+            elif is_cyclical and fulfillment is not None and fulfillment > 0.6:
+                # 周期性行业 + 叙事兑现率高 → 投资有战略意图且在执行
+                # ROIC 为负是周期低谷，不是投资方向错误
+                ret.verdict = "good"
+                for s in r.active_investments:
+                    if s.name == "CAPEX":
+                        s.healthy = True
+                        s.observation += (f"，ROIC = {inc_roic:.0%}（周期低谷），"
+                                          f"但投资叙事兑现率 {fulfillment:.0%} → 钱花在了对的地方")
+            elif is_cyclical:
+                # 周期性但叙事兑现不够 → 待观察
+                ret.verdict = "pending"
+                for s in r.active_investments:
+                    if s.name == "CAPEX":
+                        s.observation += (f"，ROIC = {inc_roic:.0%}（周期性行业，"
+                                          f"需看完整周期和投资方向）")
+            elif fulfillment is not None and fulfillment > 0.7:
+                # 非周期性但叙事兑现率很高 → 可能是投入期，不直接判死
+                ret.verdict = "pending"
+                for s in r.active_investments:
+                    if s.name == "CAPEX":
+                        s.observation += (f"，ROIC = {inc_roic:.0%}，但叙事兑现率 "
+                                          f"{fulfillment:.0%} → 投资方向可能正确，待回报兑现")
             else:
+                # 非周期性 + 叙事不兑现 + ROIC 为负 → 真的在烧钱
                 ret.verdict = "bad"
                 for s in r.active_investments:
                     if s.name == "CAPEX":
@@ -326,10 +361,18 @@ def assess_earnings(ctx: ComputeContext) -> EarningsResult:
             negative_trend += 1
 
     # ROE 稳定性
+    # 周期性公司（大宗商品等）ROE 随价格波动是正常的。
+    # 关键区分: 现金流稳 + ROE 波动 = 周期性稳定（价格驱动，运营ok）
+    #          现金流也波动 + ROE 波动 = 真不稳定（运营有问题）
     roe_stab = _feat(ctx, "roe_stability")
     if roe_stab is not None:
         if roe_stab < 0.03:
             r.stability_signals.append(f"ROE 标准差 {roe_stab:.4f}，极稳定")
+            positive_trend += 1
+        elif roe_stab > 0.08 and ocf_stab is not None and ocf_stab < 0.03:
+            # ROE 波动但现金流极稳 → 周期性稳定，不扣分
+            r.stability_signals.append(
+                f"ROE 标准差 {roe_stab:.4f}（波动），但现金流率极稳 → 周期性稳定")
             positive_trend += 1
         elif roe_stab > 0.08:
             r.stability_signals.append(f"ROE 标准差 {roe_stab:.4f}，波动大")

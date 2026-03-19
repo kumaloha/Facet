@@ -91,14 +91,47 @@ def assess_predictability(ctx: ComputeContext, moat_depth: str = "unknown") -> P
     de = _feat(ctx, "debt_to_equity")
     ic = _feat(ctx, "interest_coverage")
     net_debt_ebitda = _feat(ctx, "net_debt_to_ebitda")
+    equity = None
+    fli = ctx.get_financial_line_items()
+    if not fli.empty:
+        eq_rows = fli[fli["item_key"] == "shareholders_equity"]
+        if not eq_rows.empty:
+            equity = float(eq_rows.iloc[0]["value"])
+
+    # 判断业务类型: 银行/保险的利息支出是经营成本，不是偿债指标
+    ds = ctx.get_downstream_segments()
+    ds_cats = set()
+    if not ds.empty and "product_category" in ds.columns:
+        ds_cats = set(ds["product_category"].dropna().str.lower().unique())
+    is_financial = bool(ds_cats & {"banking", "insurance", "payment"})
 
     sick_signals = []
-    if de is not None and de > 3.0:
+    # D/E: 负权益或极低正权益（回购导致 D/E 失真）不适用，跳过
+    sy = _feat(ctx, "shareholder_yield")
+    ta_val = None
+    if not fli.empty:
+        ta_rows = fli[fli["item_key"] == "total_assets"]
+        if not ta_rows.empty:
+            ta_val = float(ta_rows.iloc[0]["value"])
+    equity_tiny = (equity is not None and ta_val is not None and ta_val > 0
+                   and equity / ta_val < 0.05)
+    equity_distorted = (
+        (equity is not None and equity <= 0) or
+        (de is not None and de > 10 and sy is not None and sy > 0.3) or
+        equity_tiny
+    )
+    if de is not None and de > 3.0 and not equity_distorted and equity is not None and equity > 0:
         sick_signals.append(f"D/E = {de:.1f}")
-    if ic is not None and ic < 2.0:
+    # 利息覆盖率: 银行/保险/支付的利息支出是经营成本，不检查
+    if ic is not None and ic < 2.0 and not is_financial:
         sick_signals.append(f"利息覆盖率 = {ic:.1f}")
+    # 净债务/EBITDA: 负权益公司通常也高，加盟模式 5-6x 是正常的
     if net_debt_ebitda is not None and net_debt_ebitda > 5.0:
-        sick_signals.append(f"净债务/EBITDA = {net_debt_ebitda:.1f}")
+        # 如果权益为负（回购导致），5-6x 可能是正常杠杆
+        if equity is not None and equity < 0 and net_debt_ebitda < 7.0:
+            pass  # 负权益公司的合理杠杆范围
+        else:
+            sick_signals.append(f"净债务/EBITDA = {net_debt_ebitda:.1f}")
 
     if sick_signals:
         r.financial_sick = True
