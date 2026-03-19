@@ -91,6 +91,24 @@ DEDUP_KEYS = {
 }
 
 
+def _chunk_proxy(content: str) -> list[ChunkMeta]:
+    """将 Proxy 按 30K 段切分，跳过前面的 cover page。"""
+    import re
+    # 跳到实质内容（找 "compensation" 或 "director" 等关键词）
+    m = re.search(r'(?i)(executive\s+compensation|compensation\s+discussion|director\s+nominees)', content)
+    start = max(0, m.start() - 500) if m else 0
+
+    # 按 30K 切段
+    useful = content[start:]
+    chunk_size = 30000
+    chunks = []
+    for i in range(0, len(useful), chunk_size):
+        chunk = useful[i:i + chunk_size]
+        if len(chunk) > 200:
+            chunks.append(ChunkMeta(f"proxy_{i // chunk_size + 1}", chunk, "default"))
+    return chunks or [ChunkMeta("proxy", content[:30000], "default")]
+
+
 async def extract_proxy(
     content: str,
     metadata: dict | None = None,
@@ -98,8 +116,7 @@ async def extract_proxy(
     """从 Proxy Statement 提取治理数据。"""
     metadata = metadata or {}
 
-    # Proxy 通常不需要拆段
-    chunks = [ChunkMeta("proxy", content[:80000], "default")]
+    chunks = _chunk_proxy(content)
 
     tables = await map_reduce_extract(
         chunks=chunks,

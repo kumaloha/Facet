@@ -123,7 +123,7 @@ async def map_reduce_extract(
     section_prompts: dict[str, str],
     dedup_keys: dict[str, str] | None = None,
     max_tokens: int = 8192,
-    concurrency: int = 3,
+    concurrency: int = 10,
 ) -> dict[str, list[dict]]:
     """MapReduce 提取。
 

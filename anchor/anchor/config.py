@@ -108,7 +108,7 @@ class Settings(BaseSettings):
         url = self.effective_llm_base_url.lower()
         if "localhost" in url or "127.0.0.1" in url:
             return 1
-        return 3
+        return 10
 
     # RSS — 空则使用内置列表
     rss_feeds: str = ""

@@ -47,12 +47,16 @@ def chunk_prospectus(content: str) -> list[ChunkMeta]:
             positions.append((m.start(), name))
 
     if len(positions) < 2:
-        logger.warning("[Prospectus] 无法识别章节，按长度切分")
+        logger.warning("[Prospectus] 无法识别章节，跳过 boilerplate 按长度切分")
+        # 跳过前面的 cover page / TOC / legal boilerplate
+        m = re.search(r'(?i)(our\s+business|business\s+overview|company\s+overview|our\s+mission)', content)
+        start = max(0, m.start() - 500) if m else 0
+        useful = content[start:]
         chunks = []
-        for i in range(0, len(content), 60000):
-            chunks.append(ChunkMeta(f"part_{i//60000+1}",
-                                     content[i:i+60000], "business"))
-        return chunks or [ChunkMeta("full", content[:60000], "business")]
+        for i in range(0, min(len(useful), 180000), 30000):
+            chunks.append(ChunkMeta(f"part_{i//30000+1}",
+                                     useful[i:i+30000], "business"))
+        return chunks or [ChunkMeta("full", content[:30000], "business")]
 
     positions.sort(key=lambda x: x[0])
     # 去重同名段（取第一个出现的）
