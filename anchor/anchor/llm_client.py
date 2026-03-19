@@ -101,7 +101,7 @@ async def transcribe_audio(
     """将音频文件转录为文字（Whisper 兼容 API）。"""
     from loguru import logger
 
-    api_key  = settings.asr_api_key or settings.llm_api_key
+    api_key  = settings.asr_api_key or settings.effective_llm_api_key
     base_url = settings.asr_base_url or None
     model    = settings.asr_model or "whisper-1"
 
@@ -144,26 +144,26 @@ async def chat_completion_multimodal(
 
 
 def _is_openai_mode() -> bool:
-    # Ollama 等本地模型无需 API key，有 base_url 即可
-    return settings.llm_provider.lower() == "openai" and (
-        bool(settings.llm_api_key) or bool(settings.llm_base_url)
+    provider = settings.effective_llm_provider.lower()
+    return provider == "openai" and (
+        bool(settings.effective_llm_api_key) or bool(settings.effective_llm_base_url)
     )
 
 
 def _get_openai_model() -> str:
-    return settings.llm_model or "gpt-4o-mini"
+    return settings.effective_llm_model or "gpt-4o-mini"
 
 
 def _get_openai_vision_model() -> str:
-    return settings.llm_vision_model or settings.llm_model or "gpt-4o-mini"
+    return settings.llm_vision_model or settings.effective_llm_model or "gpt-4o-mini"
 
 
 def _get_anthropic_model() -> str:
-    return settings.llm_model or "claude-sonnet-4-6"
+    return settings.effective_llm_model or "claude-sonnet-4-6"
 
 
 def _get_anthropic_vision_model() -> str:
-    return settings.llm_vision_model or settings.llm_model or "claude-sonnet-4-6"
+    return settings.llm_vision_model or settings.effective_llm_model or "claude-sonnet-4-6"
 
 
 # ---------------------------------------------------------------------------
@@ -184,8 +184,8 @@ async def _openai_batch(
 
     use_model = model or _get_openai_model()
     client = AsyncOpenAI(
-        api_key=settings.llm_api_key or "ollama",
-        base_url=settings.llm_base_url or None,
+        api_key=settings.effective_llm_api_key or "ollama",
+        base_url=settings.effective_llm_base_url or None,
     )
 
     # ── 1. 写 JSONL 临时文件 ─────────────────────────────────────────────
@@ -330,8 +330,8 @@ async def get_embeddings(texts: list[str]) -> list[list[float]] | None:
     """
     from loguru import logger
 
-    api_key = settings.embedding_api_key or settings.llm_api_key or "ollama"
-    base_url = settings.embedding_base_url or settings.llm_base_url or None
+    api_key = settings.embedding_api_key or settings.effective_llm_api_key or "ollama"
+    base_url = settings.embedding_base_url or settings.effective_llm_base_url or None
     model = settings.embedding_model or "text-embedding-v3"
 
     if api_key == "ollama" and not base_url:
@@ -358,7 +358,7 @@ async def get_embeddings(texts: list[str]) -> list[list[float]] | None:
 
 def _is_ollama() -> bool:
     """检测当前 LLM 后端是否为本地 Ollama。"""
-    base = (settings.llm_base_url or "").rstrip("/")
+    base = (settings.effective_llm_base_url or "").rstrip("/")
     return "localhost:11434" in base or "127.0.0.1:11434" in base
 
 
@@ -371,7 +371,7 @@ async def _ollama_completion(
     """
     import httpx
 
-    base = (settings.llm_base_url or "").rstrip("/")
+    base = (settings.effective_llm_base_url or "").rstrip("/")
     # /v1 结尾则去掉，拼原生端点
     api_url = base.removesuffix("/v1") + "/api/chat"
     payload = {
@@ -423,10 +423,17 @@ async def _openai_completion(
     from openai import AsyncOpenAI, APIError
 
     client = AsyncOpenAI(
-        api_key=settings.llm_api_key or "ollama",  # Ollama 不需要真实 key
-        base_url=settings.llm_base_url or None,
+        api_key=settings.effective_llm_api_key or "ollama",  # Ollama 不需要真实 key
+        base_url=settings.effective_llm_base_url or None,
     )
     try:
+        # DashScope (Qwen) 模型默认开启 thinking，通过 extra_body 关闭
+        # 避免消耗额外 tokens 和延迟
+        extra = {}
+        base = (settings.effective_llm_base_url or "").lower()
+        if "dashscope" in base:
+            extra["extra_body"] = {"enable_thinking": False}
+
         resp = await client.chat.completions.create(
             model=model or _get_openai_model(),
             messages=[
@@ -434,6 +441,7 @@ async def _openai_completion(
                 {"role": "user", "content": user},
             ],
             max_tokens=max_tokens,
+            **extra,
         )
         return LLMResponse(
             content=resp.choices[0].message.content or "",
@@ -494,8 +502,8 @@ async def _openai_vision_completion(
     from openai import AsyncOpenAI, APIError
 
     client = AsyncOpenAI(
-        api_key=settings.llm_api_key or "ollama",
-        base_url=settings.llm_base_url or None,
+        api_key=settings.effective_llm_api_key or "ollama",
+        base_url=settings.effective_llm_base_url or None,
     )
     try:
         resp = await client.chat.completions.create(

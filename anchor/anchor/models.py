@@ -476,6 +476,9 @@ class DownstreamSegment(SQLModel, table=True):
     # Axion 新增字段（v10）
     contract_duration_months: Optional[int] = None  # 合同平均时长（月）
     switching_cost_level: Optional[str] = None       # high|medium|low（客户转换成本）
+    product_category: Optional[str] = None           # 产品品类: beverage|commodity|cloud_infrastructure|insurance|...
+    product_criticality: Optional[str] = None        # 产品关键性: high|medium|low（出事代价大=high）
+    segment_gross_margin: Optional[float] = None     # 该业务线的毛利率（分业务线同行对比用）
     description: Optional[str] = None              # 补充说明
     raw_post_id: Optional[int] = Field(
         default=None, foreign_key="raw_posts.id", index=True
@@ -850,7 +853,7 @@ class PricingAction(SQLModel, table=True):
 
 
 class CompetitorRelation(SQLModel, table=True):
-    """竞对关系 — 每对竞争关系一行"""
+    """竞对关系 — 每对竞争关系一行（静态）"""
 
     __tablename__ = "competitor_relations"
 
@@ -862,6 +865,62 @@ class CompetitorRelation(SQLModel, table=True):
     )
     market_segment: Optional[str] = None
     relationship_type: str = "direct_competitor"  # direct_competitor|indirect_competitor|potential_entrant
+    raw_post_id: Optional[int] = Field(
+        default=None, foreign_key="raw_posts.id", index=True
+    )
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class CompetitiveDynamic(SQLModel, table=True):
+    """竞争动态事件 — 每个竞争事件一行（动态）
+
+    护城河检测的核心数据源：竞品进攻、低谷存活、专利挑战、监管变化等。
+    event_type 标准值:
+      price_war       — 价格战
+      new_entry       — 新进入者
+      exit            — 玩家退出
+      product_launch  — 竞品新品发布
+      patent_challenge — 专利挑战
+      patent_expiration — 专利到期
+      regulatory_change — 监管变化
+      industry_downturn — 行业低谷
+      migration_tool   — 迁移工具（降低转换壁垒）
+    """
+
+    __tablename__ = "competitive_dynamics"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    company_id: int = Field(foreign_key="company_profiles.id", index=True)
+    competitor_name: str
+    event_type: str                                # 见 docstring
+    event_description: str                         # 事件描述 ≤300字
+    outcome_description: Optional[str] = None      # 结果描述 ≤300字
+    outcome_market_share_change: Optional[float] = None  # 份额变化（+0.02 = 涨2%）
+    estimated_investment: Optional[float] = None   # 估计投入金额
+    event_date: Optional[str] = None               # 事件发生时间
+    raw_post_id: Optional[int] = Field(
+        default=None, foreign_key="raw_posts.id", index=True
+    )
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class PeerFinancial(SQLModel, table=True):
+    """同行财务指标 — 护城河同行对比的核心数据
+
+    每条记录 = 一家同行的一个指标一个时期。
+    segment 字段可选：填了则用于分业务线对比（如特变电工的输变电 vs 多晶硅）。
+    """
+
+    __tablename__ = "peer_financials"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    company_id: int = Field(foreign_key="company_profiles.id", index=True)
+    peer_name: str                                 # 同行公司名（如 "许继电气"）
+    metric: str                                    # gross_margin|operating_margin|net_margin|revenue
+    value: float                                   # 指标值（比率用小数，如 0.22 = 22%）
+    period: str = Field(index=True)                # "FY2025"
+    segment: Optional[str] = None                  # 对应本公司哪条业务线（如 "输变电设备"）
+    source: Optional[str] = None                   # 数据来源（年报/行业报告）
     raw_post_id: Optional[int] = Field(
         default=None, foreign_key="raw_posts.id", index=True
     )

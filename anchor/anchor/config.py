@@ -10,15 +10,65 @@ class Settings(BaseSettings):
     # Anthropic（保留兼容）
     anthropic_api_key: str = ""
 
-    # LLM 统一配置（优先级高于 anthropic_api_key）
-    # llm_provider: "anthropic" | "openai"（兼容 Qwen/DeepSeek/Ollama 等 OpenAI 接口）
-    # Ollama 本地模型示例：LLM_PROVIDER=openai, LLM_BASE_URL=http://localhost:11434/v1, LLM_MODEL=qwen2.5:14b
-    llm_provider: str = "anthropic"
+    # ── LLM 双模式 ──────────────────────────────────────────────────────────────
+    # LLM_MODE: "local"（本地 Ollama） | "cloud"（远程 API）
+    # 切换模式会自动使用对应的 provider/key/url/model，无需手动改多个字段
+    llm_mode: str = "local"  # 默认本地
+
+    # 本地模式配置
+    llm_local_provider: str = "openai"
+    llm_local_api_key: str = "ollama"
+    llm_local_base_url: str = "http://localhost:11434/v1"
+    llm_local_model: str = "qwen3.5"
+
+    # 云服务模式配置
+    llm_cloud_provider: str = "openai"
+    llm_cloud_api_key: str = ""
+    llm_cloud_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    llm_cloud_model: str = "qwen-plus"
+
+    # 以下为运行时生效的字段（由 llm_mode 决定）
+    # llm_provider / llm_api_key / llm_base_url / llm_model 仍保留向后兼容
+    # 如果直接设了这些字段，优先级高于 mode 自动选择
+    llm_provider: str = ""
     llm_api_key: str = ""
     llm_base_url: str = ""
     llm_model: str = ""
+
     # 视觉模型（图片描述用）：不填则复用 llm_model；OpenAI 模式下通常需填 qwen-vl-plus 等
     llm_vision_model: str = ""
+
+    @property
+    def effective_llm_provider(self) -> str:
+        if self.llm_provider:
+            return self.llm_provider
+        if self.llm_mode == "cloud":
+            return self.llm_cloud_provider
+        return self.llm_local_provider
+
+    @property
+    def effective_llm_api_key(self) -> str:
+        if self.llm_api_key:
+            return self.llm_api_key
+        if self.llm_mode == "cloud":
+            return self.llm_cloud_api_key
+        return self.llm_local_api_key
+
+    @property
+    def effective_llm_base_url(self) -> str:
+        if self.llm_base_url:
+            return self.llm_base_url
+        if self.llm_mode == "cloud":
+            return self.llm_cloud_base_url
+        return self.llm_local_base_url
+
+    @property
+    def effective_llm_model(self) -> str:
+        if self.llm_model:
+            return self.llm_model
+        if self.llm_mode == "cloud":
+            return self.llm_cloud_model
+        return self.llm_local_model
 
     # Twitter/X
     twitter_bearer_token: str = ""
@@ -55,7 +105,7 @@ class Settings(BaseSettings):
         if self.extract_concurrency > 0:
             return self.extract_concurrency
         # 自动判断：本地模型串行，云端并发
-        url = self.llm_base_url.lower()
+        url = self.effective_llm_base_url.lower()
         if "localhost" in url or "127.0.0.1" in url:
             return 1
         return 3

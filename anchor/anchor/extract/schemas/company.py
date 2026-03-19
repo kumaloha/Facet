@@ -87,6 +87,9 @@ class ExtractedDownstream(BaseModel):
     recognition_method: Optional[str] = None
     contract_duration_months: Optional[int] = None
     switching_cost_level: Optional[str] = None
+    product_category: Optional[str] = None         # beverage|commodity|cloud_infrastructure|insurance|...
+    product_criticality: Optional[str] = None      # high|medium|low
+    segment_gross_margin: LenientFloat = None      # 该业务线毛利率
     description: Optional[str] = None
 
 
@@ -195,6 +198,27 @@ class ExtractedCompetitorRelation(BaseModel):
     competitor_name: str
     market_segment: Optional[str] = None
     relationship_type: str = "direct_competitor"
+
+
+class ExtractedCompetitiveDynamic(BaseModel):
+    """竞争动态事件 — 护城河检测核心数据"""
+    competitor_name: str
+    event_type: str = "product_launch"  # price_war|new_entry|exit|product_launch|patent_challenge|patent_expiration|regulatory_change|industry_downturn|migration_tool
+    event_description: str = ""
+    outcome_description: Optional[str] = None
+    outcome_market_share_change: LenientFloat = None
+    estimated_investment: LenientFloat = None
+    event_date: Optional[str] = None
+
+
+class ExtractedPeerFinancial(BaseModel):
+    """同行财务指标 — 护城河同行对比"""
+    peer_name: str
+    metric: str = "gross_margin"  # gross_margin|operating_margin|net_margin|revenue
+    value: LenientFloat = None
+    period: Optional[str] = None
+    segment: Optional[str] = None  # 对应本公司哪条业务线
+    source: Optional[str] = None
 
 
 class ExtractedMarketShareData(BaseModel):
@@ -331,6 +355,8 @@ class CompanyExtractionResult(BaseModel):
     # Axion 新增表
     pricing_actions: list[ExtractedPricingAction] = []
     competitor_relations: list[ExtractedCompetitorRelation] = []
+    competitive_dynamics: list[ExtractedCompetitiveDynamic] = []
+    peer_financials: list[ExtractedPeerFinancial] = []
     market_share_data: list[ExtractedMarketShareData] = []
     known_issues: list[ExtractedKnownIssue] = []
     management_acknowledgments: list[ExtractedManagementAcknowledgment] = []
