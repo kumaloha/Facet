@@ -62,6 +62,9 @@ class EarningsResult:
     # 所有者盈余
     owner_earnings: float | None = None
 
+    # 行业质量信号
+    thin_margin_warning: str = ""
+
     # 趋势稳定性
     stability_signals: list[str] = field(default_factory=list)
     trend: str = ""  # improving / stable / deteriorating / no_data
@@ -185,6 +188,16 @@ def assess_earnings(ctx: ComputeContext) -> EarningsResult:
             observation=f"净债务/EBITDA = {net_debt_ebitda:.1f}，偿债压力大",
             healthy=False,
         ))
+
+    # ── 行业利润率信号 ──
+    gm = _item(ctx, "gross_margin") if capex is not None else None
+    if gm is None:
+        rev_val = _item(ctx, "revenue")
+        cogs_val = _item(ctx, "cost_of_revenue")
+        if rev_val and cogs_val and rev_val > 0:
+            gm = (rev_val - cogs_val) / rev_val
+    if gm is not None and gm < 0.20:
+        r.thin_margin_warning = f"毛利率 {gm:.0%}，属于薄利行业，不是巴菲特偏好的好生意"
 
     # ══════════════════════════════════════════════════════════
     #  2. 验证主动投资的回报
@@ -439,6 +452,10 @@ def format_earnings(result: EarningsResult) -> str:
         lines.append(f"\n  ▸ 利润真实性")
         mark = "●" if result.profit_real is True else ("✗" if result.profit_real is False else "?")
         lines.append(f"    {mark} {result.profit_detail}")
+
+    # 行业质量
+    if result.thin_margin_warning:
+        lines.append(f"\n  ⚠ {result.thin_margin_warning}")
 
     # 趋势稳定性
     if result.stability_signals:

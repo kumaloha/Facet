@@ -139,11 +139,38 @@ def _pricing_test(ctx: ComputeContext) -> PricingTestResult:
     if pa.empty:
         return pt
 
-    price_ups = pa[pa["price_change_pct"] > 0] if "price_change_pct" in pa.columns else pa
-    if price_ups.empty:
+    if "price_change_pct" not in pa.columns:
         return pt
 
     pt.has_data = True
+
+    price_ups = pa[pa["price_change_pct"] > 0]
+    price_downs = pa[pa["price_change_pct"] < 0]
+
+    # ── 降价检测：反面信号 ──
+    if not price_downs.empty:
+        avg_cut = price_downs["price_change_pct"].mean()
+        pt.evidence.append(_ev("pricing_actions",
+            f"有 {len(price_downs)} 条降价记录（平均 {avg_cut:+.0%}）→ 在打价格战",
+            False, EvidenceStrength.BEHAVIORAL))
+
+        # 降价 + 份额涨 = 靠降价抢份额，不是定价权
+        if not ms.empty and "share" in ms.columns:
+            shares = ms["share"].dropna()
+            if len(shares) >= 2 and shares.iloc[-1] >= shares.iloc[0]:
+                pt.evidence.append(_ev("pricing_actions",
+                    f"降价后份额 {shares.iloc[0]:.1%} → {shares.iloc[-1]:.1%}（靠降价抢份额，不是护城河）",
+                    False, EvidenceStrength.BEHAVIORAL))
+
+        # 如果只有降价没有涨价 → 直接判无定价权
+        if price_ups.empty:
+            pt.routes_to = "no_pricing_power"
+            return pt
+
+    # ── 涨价检测 ──
+    if price_ups.empty:
+        return pt
+
     pt.raised_price = True
     pt.evidence.append(_ev("pricing_actions", f"有 {len(price_ups)} 条提价记录",
                            None, EvidenceStrength.BEHAVIORAL))
@@ -497,8 +524,22 @@ def _check_network_effect(ctx: ComputeContext) -> MoatCategory:
     cd = ctx.get_competitive_dynamics()
     ds = ctx.get_downstream_segments()
 
-    # ── 直接/双边网络效应（竞品进攻测试）──
+    # ── 直接/双边网络效应 ──
+    # 前提: 必须有平台型收入结构才可能有网络效应
+    # 竞品进攻失败不能单独证明网络效应（汽车打赢价格战 ≠ 网络效应）
     direct = MoatSubtype(name="直接/双边网络效应")
+
+    # 先检查是否有平台特征
+    has_platform_structure = False
+    if not ds.empty and "revenue_type" in ds.columns:
+        types = ds["revenue_type"].dropna().str.lower().unique().tolist()
+        platform = [t for t in types if t in ("marketplace", "platform", "transaction_fee", "ad_revenue")]
+        if platform:
+            has_platform_structure = True
+            direct.evidence.append(_ev("downstream_segments",
+                f"平台型收入: {', '.join(platform)}", True, EvidenceStrength.STRUCTURAL))
+
+    # 竞品进攻记录（只有在有平台结构时才归为网络效应）
     if not cd.empty and "event_type" in cd.columns:
         attacks = cd[cd["event_type"].isin(["new_entry", "product_launch", "price_war"])]
         if not attacks.empty:
@@ -522,25 +563,25 @@ def _check_network_effect(ctx: ComputeContext) -> MoatCategory:
 
             supports = [e for e in direct.evidence if e.supports is True]
             opposes = [e for e in direct.evidence if e.supports is False]
-            if supports and not opposes:
-                direct.detected = True
-                direct.detail = f"竞品进攻 {len(attacks)} 次，均未撼动地位"
-            elif supports and opposes:
-                direct.detected = True
-                direct.detail = f"有胜有败（{len(supports)} 次防住，{len(opposes)} 次被蚕食），护城河在削弱"
-            elif opposes:
-                direct.detected = False
-                direct.detail = "竞品进攻取得成效"
+
+            if has_platform_structure:
+                # 有平台结构 + 竞品失败 → 网络效应
+                if supports and not opposes:
+                    direct.detected = True
+                    direct.detail = f"平台型业务 + 竞品进攻 {len(attacks)} 次均未撼动"
+                elif supports and opposes:
+                    direct.detected = True
+                    direct.detail = f"有胜有败（{len(supports)} 防住，{len(opposes)} 被蚕食），网络效应在削弱"
+                elif opposes:
+                    direct.detected = False
+                    direct.detail = "竞品进攻取得成效"
+            else:
+                # 无平台结构 → 竞品失败可能是成本优势/品牌，不归网络效应
+                if supports:
+                    direct.detail = f"竞品进攻 {len(attacks)} 次防住，但非平台型业务，不归网络效应"
     else:
         _no_data(direct, "competitive_dynamics", "竞品进攻")
 
-    # 结构: 平台型收入
-    if not ds.empty and "revenue_type" in ds.columns:
-        types = ds["revenue_type"].dropna().unique().tolist()
-        platform = [t for t in types if t in ("marketplace", "platform", "transaction_fee", "ad_revenue")]
-        if platform:
-            direct.evidence.append(_ev("downstream_segments",
-                f"平台型收入: {', '.join(platform)}", None, EvidenceStrength.STRUCTURAL))
     cat.subtypes.append(direct)
 
     # ── 数据网络效应 ──
@@ -865,6 +906,7 @@ def format_moat(result: MoatResult) -> str:
             "cost_advantage": "→ 成本优势型定价",
             "pricing_power_untyped": "→ 有定价能力，类型待定",
             "none": "→ 无定价权",
+            "no_pricing_power": "→ 在降价，无定价权",
         }
         lines.append(f"\n  ▸ 涨价测试: {route_labels.get(pt.routes_to, pt.routes_to)}")
         for ev in pt.evidence:

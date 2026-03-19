@@ -47,8 +47,14 @@ def _feat(ctx: ComputeContext, key: str) -> float | None:
     return ctx.features.get(f"l0.company.{key}")
 
 
-def assess_risk(ctx: ComputeContext) -> RiskResult:
+def assess_risk(ctx: ComputeContext, home_market: str = "") -> RiskResult:
+    """风险评估。
+
+    home_market: 公司注册地/主要运营市场（如 "China"），
+                 收入集中在 home_market 不算地缘风险。
+    """
     r = RiskResult()
+    home = home_market.lower()
 
     # ══════════════════════════════════════════════════════════
     #  地缘政治
@@ -67,6 +73,10 @@ def assess_risk(ctx: ComputeContext) -> RiskResult:
             region = str(row.get("region", "")).lower()
             share = row.get("revenue_share")
             if share is None:
+                continue
+
+            # 本土市场不算地缘风险
+            if home and (home in region or region in home):
                 continue
 
             if any(hr in region for hr in HIGH_RISK_REGIONS) and share > 0.20:
@@ -95,22 +105,57 @@ def assess_risk(ctx: ComputeContext) -> RiskResult:
                 f"收入地理集中: 最大区域占 {top_region:.0%}"))
 
     # ══════════════════════════════════════════════════════════
-    #  客户集中
+    #  市场份额趋势（份额下跌 = 风险信号）
     # ══════════════════════════════════════════════════════════
 
-    top_cust = _feat(ctx, "top_customer_concentration")
-    if top_cust is not None:
-        if top_cust > 0.50:
-            r.risks.append(RiskItem("concentration", "catastrophic",
-                f"最大客户占收入 {top_cust:.0%}，严重依赖"))
-        elif top_cust > 0.30:
-            r.risks.append(RiskItem("concentration", "significant",
-                f"最大客户占收入 {top_cust:.0%}"))
+    ms = ctx.get_market_share_data()
+    if not ms.empty and "share" in ms.columns:
+        shares = ms["share"].dropna()
+        if len(shares) >= 2:
+            trend = shares.iloc[-1] - shares.iloc[0]
+            if trend < -0.05:
+                r.risks.append(RiskItem("market_share", "significant",
+                    f"市场份额下滑: {shares.iloc[0]:.1%} → {shares.iloc[-1]:.1%} ({trend:+.1%})"))
 
-    top3 = _feat(ctx, "top3_customer_concentration")
-    if top3 is not None and top3 > 0.70:
-        r.risks.append(RiskItem("concentration", "significant",
-            f"前三客户占收入 {top3:.0%}"))
+    # ══════════════════════════════════════════════════════════
+    #  客户集中（区分具名客户 vs 业务线/泛称）
+    # ══════════════════════════════════════════════════════════
+
+    ds = ctx.get_downstream_segments()
+    # 泛称过滤：这些名字是业务线/品类，不是具名客户
+    GENERIC_NAMES = {"消费者", "用户", "其他", "others", "other", "mass market",
+                     "会员", "零售", "批发", "企业", "政府", "smb",
+                     "汽车", "电池", "储能", "零部件", "手机", "电商",
+                     "国内", "国际", "线上", "线下", "个人", "机构"}
+
+    has_named_customer = False
+    max_named_pct = 0.0
+    named_count = 0
+    if not ds.empty and "customer_name" in ds.columns and "revenue_pct" in ds.columns:
+        for _, row in ds.iterrows():
+            name = str(row.get("customer_name", "")).lower().strip()
+            pct = row.get("revenue_pct")
+            if pct is None:
+                continue
+            # 判断是否为具名客户（不在泛称列表中）
+            is_generic = any(g in name for g in GENERIC_NAMES)
+            # 如果名字包含"产品"/"业务"/"部门"等也算泛称
+            segment_kw = ["产品", "业务", "部门", "segment", "division", "line"]
+            if any(kw in name for kw in segment_kw):
+                is_generic = True
+            if not is_generic:
+                has_named_customer = True
+                named_count += 1
+                if pct > max_named_pct:
+                    max_named_pct = pct
+
+    if has_named_customer:
+        if max_named_pct > 0.50:
+            r.risks.append(RiskItem("concentration", "catastrophic",
+                f"最大具名客户占收入 {max_named_pct:.0%}，严重依赖"))
+        elif max_named_pct > 0.30:
+            r.risks.append(RiskItem("concentration", "significant",
+                f"最大具名客户占收入 {max_named_pct:.0%}"))
 
     # ══════════════════════════════════════════════════════════
     #  供应链
@@ -258,6 +303,9 @@ def assess_risk(ctx: ComputeContext) -> RiskResult:
             region = str(row.get("region", "")).lower()
             share = row.get("revenue_share")
             if share and share > 0.10:
+                # 本土市场不算货币风险
+                if home and (home in region or region in home):
+                    continue
                 if any(vc in region for vc in VOLATILE_CURRENCY):
                     r.risks.append(RiskItem("currency", "significant",
                         f"收入 {share:.0%} 来自货币高波动地区: {row.get('region', '')}"))

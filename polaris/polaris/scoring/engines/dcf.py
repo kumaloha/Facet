@@ -122,6 +122,18 @@ def compute_intrinsic_value(
     discount_rate = get_discount_rate(discount_rate, market)
 
     oe = features.get("l0.company.owner_earnings")
+    inc_roic = features.get("l0.company.incremental_roic")
+    oe_to_ni = features.get("l0.company.owner_earnings_to_net_income")
+
+    # 正常化 OE: 重投入期（capex >> 折旧）时 OE 被压低。
+    # 如果 ROIC 好（投资有回报），超出折旧的 capex 是增长投资，不应全额扣减。
+    # 当 OE/NI < 0.3（95%+利润被 capex 吃掉）且 ROIC > 10%，用净利润替代。
+    if (oe is not None and oe_to_ni is not None and oe_to_ni < 0.3
+            and inc_roic is not None and inc_roic > 0.10):
+        normalized_ni = oe / oe_to_ni  # 还原净利润
+        if normalized_ni > 0:
+            oe = normalized_ni  # 重投入期: 用净利润近似
+
     if oe is None or oe <= 0:
         return DCFResult(status="unvaluable")
 
