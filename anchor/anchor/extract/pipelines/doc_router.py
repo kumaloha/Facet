@@ -5,6 +5,8 @@
 
 用法:
     result = await extract_document(content, doc_type="annual_report", metadata={...})
+    # XBRL-first: 传入 filing 对象自动提取 XBRL
+    result = await extract_document(content, doc_type="annual_report", metadata={...}, filing=filing)
 """
 
 from __future__ import annotations
@@ -35,8 +37,15 @@ async def extract_document(
     content: str,
     doc_type: str,
     metadata: dict | None = None,
+    filing=None,
 ) -> ExtractionResult:
     """统一入口：根据文档类型路由到对应管线。
+
+    Args:
+        content: 文档全文
+        doc_type: 文档类型
+        metadata: 可选元数据
+        filing: edgartools Filing 对象（可选，用于 XBRL 提取）
 
     doc_type:
       - annual_report: 10-K / 年报
@@ -53,7 +62,28 @@ async def extract_document(
 
     if doc_type == "annual_report":
         from anchor.extract.pipelines.annual_report import extract_annual_report
-        return await extract_annual_report(content, metadata)
+        from anchor.extract.pipelines.xbrl_extract import XBRLData, extract_xbrl
+
+        # XBRL-first: 尝试从 filing 提取结构化数据
+        xbrl_data: XBRLData | None = None
+        if filing is not None:
+            try:
+                xbrl_data = extract_xbrl(filing)
+                ticker = metadata.get("ticker", "?")
+                if xbrl_data.has_xbrl:
+                    logger.info(
+                        f"[DocRouter] {ticker}: XBRL 提取成功 "
+                        f"({len(xbrl_data.financial_line_items)} 财务科目)"
+                    )
+                else:
+                    logger.warning(
+                        f"[DocRouter] {ticker}: XBRL 不可用 ({xbrl_data.error})"
+                    )
+            except Exception as e:
+                logger.warning(f"[DocRouter] XBRL 提取异常: {e}")
+                xbrl_data = None
+
+        return await extract_annual_report(content, metadata, xbrl_data=xbrl_data)
 
     elif doc_type == "proxy":
         from anchor.extract.pipelines.proxy import extract_proxy

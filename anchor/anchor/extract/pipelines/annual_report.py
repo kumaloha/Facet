@@ -1,24 +1,31 @@
 """
-10-K / 年报提取管线
-====================
-按章节拆分，每章 focused prompt，MapReduce 合并。
+10-K / 年报提取管线（XBRL-first）
+==================================
+策略：
+  1. XBRL 提取结构化数据（财务三表、债务、审计、地理分部）→ 零 token
+  2. LLM 只处理叙述性内容（业务结构、风险、MD&A）→ 省 40-50% token
+  3. 合并 XBRL + LLM 结果
 
 10-K 标准章节:
-  Part I:  Item 1 (Business), Item 1A (Risk Factors), Item 1B (Unresolved Staff Comments)
-  Part II: Item 5 (Market), Item 6 (Selected Financial), Item 7 (MD&A),
-           Item 8 (Financial Statements), Item 9A (Controls)
-  Part III: Item 10-14 (Directors, Compensation, Ownership, Relationships, Fees)
-  Part IV:  Item 15 (Exhibits)
+  Part I:  Item 1 (Business), Item 1A (Risk Factors)
+  Part II: Item 7 (MD&A), Item 8 (Financial Statements)
+  Part III: Item 10-14 (Directors, Compensation, etc.)
 
-提取目标 (8 张表):
-  - financial_line_items  ← Item 8
-  - downstream_segments   ← Item 1
-  - upstream_segments     ← Item 1
-  - geographic_revenues   ← Item 1 / Item 8 notes
-  - debt_obligations      ← Item 8 notes
-  - litigations           ← Item 1A / Item 8 notes
-  - audit_opinions        ← Item 8
+提取目标 (8+ 张表):
+  ── XBRL 直接提取 ──
+  - financial_line_items  ← XBRL 三表
+  - debt_obligations      ← XBRL 维度数据
+  - geographic_revenues   ← XBRL 维度数据 (LLM 补充)
+  - audit_opinion         ← XBRL 审计师信息
+
+  ── LLM 叙述提取 ──
+  - downstream_segments   ← Item 1 (Business)
+  - upstream_segments     ← Item 1 (Business)
+  - litigations           ← Item 1A (Risk Factors)
   - operational_issues    ← Item 7 (MD&A)
+  - competitive_dynamics  ← Item 1A (Risk Factors)
+  - known_issues          ← Item 1A (Risk Factors)
+  - management_guidance   ← Item 7 (MD&A)
 """
 
 from __future__ import annotations
@@ -33,6 +40,7 @@ from anchor.extract.pipelines._mapreduce import (
     map_reduce_extract,
     merge_table_results,
 )
+from anchor.extract.pipelines.xbrl_extract import XBRLData
 
 # ── 章节识别 ──────────────────────────────────────────────────────────
 
@@ -43,13 +51,20 @@ _SECTION_PATTERNS = [
     (r"(?i)\bitems?\s*1\s*(?:and\s*2)?[\s\S]{0,50}?business\b", "business"),
     (r"(?i)\bitem\s*1a[\s\S]{0,30}?risk\s*factors\b", "risk_factors"),
     (r"(?i)\bitem\s*7[\s\S]{0,30}?management[\s\S]{0,20}?discussion\b", "mda"),
+    # financials 和 governance 仍然识别，但仅在无 XBRL 时用作 fallback
     (r"(?i)\bitem\s*8[\s\S]{0,30}?financial\s*statements\b", "financials"),
     (r"(?i)\bitem\s*1[0-4]\b", "governance"),  # Part III 合并
 ]
 
 
-def chunk_10k(content: str) -> list[ChunkMeta]:
-    """按 10-K 章节拆分文档。找不到章节标记则按长度切。"""
+def chunk_10k(content: str, skip_sections: set[str] | None = None) -> list[ChunkMeta]:
+    """按 10-K 章节拆分文档。找不到章节标记则按长度切。
+
+    Args:
+        content: 10-K 全文
+        skip_sections: 跳过的章节名（如 XBRL 已覆盖则跳过 financials/governance）
+    """
+    skip_sections = skip_sections or set()
 
     # 找到所有章节起始位置
     positions = []
@@ -124,6 +139,10 @@ def chunk_10k(content: str) -> list[ChunkMeta]:
     max_chunk_chars = 40000  # 清理装饰字符后 40K chars ≈ 10-15K token
     chunks = []
     for i, (start, name) in enumerate(positions):
+        # 跳过 XBRL 已覆盖的章节
+        if name in skip_sections:
+            continue
+
         end = positions[i + 1][0] if i + 1 < len(positions) else len(content)
         text = content[start:end].strip()
         if len(text) <= 200:  # 太短的段跳过
@@ -147,19 +166,21 @@ def chunk_10k(content: str) -> list[ChunkMeta]:
     return chunks
 
 
-# ── Section Prompts ──────────────────────────────────────────────────
+# ── Section Prompts (LLM 叙述提取) ──────────────────────────────────
 
 _BASE = "你是资深基本面分析师。只输出 JSON，无数据返回空数组 []。金额单位百万美元，比率用小数。\n"
 
-SECTION_PROMPTS = {
-    "business": _BASE + """
+# business prompt 模板 — {segment_hints} 占位符将在运行时注入 XBRL 分部信息
+_BUSINESS_PROMPT_TEMPLATE = _BASE + """
 ## 任务：从 Item 1 (Business) 提取业务结构
+
+{segment_hints}
 
 输出 JSON:
 ```json
-{
+{{
   "downstream_segments": [
-    {
+    {{
       "customer_name": "业务线或客户名称",
       "revenue_pct": 0.40,
       "product_category": "beverage|commodity|cloud_infrastructure|insurance|banking|payment|healthcare|pharma|gaming|social_media|consumer_electronics|industrial_equipment|food|grocery|liquor|tobacco|operating_system|pipeline|utility",
@@ -170,22 +191,22 @@ SECTION_PROMPTS = {
       "product_criticality": "high|medium|low|null",
       "segment_gross_margin": 0.25,
       "description": "简要说明"
-    }
+    }}
   ],
   "upstream_segments": [
-    {
+    {{
       "supplier_name": "供应商名",
       "supply_type": "foundry|memory|assembly|component|raw_material|logistics|software",
       "geographic_location": "所在地",
       "is_sole_source": false,
       "concentration_risk": "描述集中风险",
       "description": "说明"
-    }
+    }}
   ],
   "geographic_revenues": [
-    {"region": "地域名", "revenue_share": 0.45}
+    {{"region": "地域名", "revenue_share": 0.45}}
   ]
-}
+}}
 ```
 
 ## 提取规则
@@ -197,9 +218,9 @@ SECTION_PROMPTS = {
 - product_category: 必须从给定列表中选择，这是生意画像的关键输入
 - segment_gross_margin: 如果文档提到该业务线的毛利率则填，否则 null
 - revenue_pct: 估算各业务线占总收入百分比，用小数（0.40 = 40%）。没有明确数据时可填 null，但必须输出业务线
-""",
+"""
 
-    "risk_factors": _BASE + """
+_RISK_FACTORS_PROMPT = _BASE + """
 ## 任务：从 Item 1A (Risk Factors) 提取竞争和风险信息
 
 输出 JSON:
@@ -239,9 +260,9 @@ SECTION_PROMPTS = {
 - competitive_dynamics: 从风险因素中提取明确提到的竞争威胁和行业事件
 - event_type: 严格从给定列表中选
 - known_issues: 公司自己披露的重大风险，severity 根据公司描述的严重程度判断
-""",
+"""
 
-    "mda": _BASE + """
+_MDA_PROMPT = _BASE + """
 ## 任务：从 Item 7 (MD&A) 提取经营议题
 
 输出 JSON:
@@ -268,9 +289,10 @@ SECTION_PROMPTS = {
   ]
 }
 ```
-""",
+"""
 
-    "financials": _BASE + """
+# Fallback prompts — 仅在无 XBRL 时使用
+_FINANCIALS_FALLBACK_PROMPT = _BASE + """
 ## 任务：从 Item 8 (Financial Statements) 提取三表数据和审计意见
 
 输出 JSON:
@@ -306,9 +328,9 @@ SECTION_PROMPTS = {
 - 金额统一百万美元（或百万人民币，按原文）
 - dividends_paid 和 share_repurchase 通常为负数
 - 只提最新一期完整年度数据
-""",
+"""
 
-    "governance": _BASE + """
+_GOVERNANCE_FALLBACK_PROMPT = _BASE + """
 ## 任务：从 Part III 提取治理信息
 
 输出 JSON:
@@ -346,8 +368,49 @@ SECTION_PROMPTS = {
   ]
 }
 ```
-""",
-}
+"""
+
+
+def _build_section_prompts(
+    xbrl_data: XBRLData | None = None,
+) -> dict[str, str]:
+    """构建 section prompts，根据 XBRL 可用性决定是否包含 financials/governance。"""
+
+    # 注入 XBRL 分部提示到 business prompt
+    segment_hints = ""
+    if xbrl_data and xbrl_data.segment_hints:
+        hints_str = ", ".join(xbrl_data.segment_hints)
+        segment_hints = (
+            f"## XBRL 已知分部信息（参考）\n"
+            f"XBRL 报告的业务分部: {hints_str}\n"
+            f"请确保覆盖这些分部，并补充 XBRL 未提供的叙述性字段。\n"
+        )
+
+    prompts: dict[str, str] = {
+        "business": _BUSINESS_PROMPT_TEMPLATE.format(segment_hints=segment_hints),
+        "risk_factors": _RISK_FACTORS_PROMPT,
+        "mda": _MDA_PROMPT,
+    }
+
+    # 无 XBRL 时，fallback 到 LLM 提取财务数据
+    has_xbrl_financials = (
+        xbrl_data is not None
+        and xbrl_data.has_xbrl
+        and len(xbrl_data.financial_line_items) >= 5  # 至少5个科目才算有效
+    )
+
+    if not has_xbrl_financials:
+        prompts["financials"] = _FINANCIALS_FALLBACK_PROMPT
+        prompts["governance"] = _GOVERNANCE_FALLBACK_PROMPT
+        logger.info("[10-K] 无有效 XBRL 数据，启用 LLM 财务/治理提取 fallback")
+    else:
+        logger.info(
+            f"[10-K] XBRL 已提供 {len(xbrl_data.financial_line_items)} 个财务科目，"
+            f"跳过 financials/governance LLM 提取"
+        )
+
+    return prompts
+
 
 # 去重规则
 DEDUP_KEYS = {
@@ -368,35 +431,106 @@ DEDUP_KEYS = {
 }
 
 
+# ── 合并 XBRL + LLM ────────────────────────────────────────────────
+
+def _merge_xbrl_into_tables(
+    tables: dict[str, list[dict]],
+    xbrl_data: XBRLData,
+) -> dict[str, list[dict]]:
+    """将 XBRL 结构化数据合并到 LLM 提取结果中。
+
+    XBRL 数据优先（更精确），LLM 数据补充。
+    """
+    if not xbrl_data.has_xbrl:
+        return tables
+
+    # 1. 财务科目：XBRL 为主，LLM 补充缺失科目
+    if xbrl_data.financial_line_items:
+        xbrl_keys = {item["item_key"] for item in xbrl_data.financial_line_items}
+        llm_items = tables.get("financial_line_items", [])
+        # LLM 补充 XBRL 没有的科目
+        supplement = [item for item in llm_items if item.get("item_key") not in xbrl_keys]
+        tables["financial_line_items"] = xbrl_data.financial_line_items + supplement
+
+    # 2. 债务：XBRL 为基础，LLM 补充细节（利率、到期日）
+    if xbrl_data.debt_obligations:
+        if "debt_obligations" not in tables or not tables["debt_obligations"]:
+            tables["debt_obligations"] = xbrl_data.debt_obligations
+        else:
+            # LLM 可能有更详细的债务信息（instrument name, maturity, rate）
+            # 保留 LLM 版本，用 XBRL 补充 LLM 遗漏的
+            xbrl_debt = {d["instrument_name"]: d for d in xbrl_data.debt_obligations}
+            llm_debt_names = {d.get("instrument_name", "") for d in tables["debt_obligations"]}
+            for name, debt in xbrl_debt.items():
+                if name not in llm_debt_names:
+                    tables["debt_obligations"].append(debt)
+
+    # 3. 地理收入：XBRL 优先（精确比例），LLM 补充
+    if xbrl_data.geographic_revenues:
+        if "geographic_revenues" not in tables or not tables["geographic_revenues"]:
+            tables["geographic_revenues"] = xbrl_data.geographic_revenues
+        else:
+            # XBRL 有精确数据时替换 LLM 估算
+            if len(xbrl_data.geographic_revenues) >= 2:
+                tables["geographic_revenues"] = xbrl_data.geographic_revenues
+
+    # 4. 审计意见
+    if xbrl_data.audit_opinion:
+        if "audit_opinion" not in tables or not tables["audit_opinion"]:
+            tables["audit_opinion"] = [xbrl_data.audit_opinion]
+
+    return tables
+
+
 # ── 主入口 ────────────────────────────────────────────────────────────
 
 async def extract_annual_report(
     content: str,
     metadata: dict | None = None,
+    xbrl_data: XBRLData | None = None,
 ) -> ExtractionResult:
     """从 10-K / 年报中提取结构化数据。
+
+    XBRL-first 策略：
+      - 有 XBRL → 财务数据从 XBRL 取，LLM 只处理叙述性章节
+      - 无 XBRL → 全部由 LLM 提取（backward compatible）
 
     Args:
         content: 10-K 全文
         metadata: 可选元数据（ticker, period 等）
+        xbrl_data: 预提取的 XBRL 数据（None 则全 LLM）
 
     Returns:
         ExtractionResult
     """
     metadata = metadata or {}
 
-    # 1. 拆段
-    chunks = chunk_10k(content)
+    # 1. 构建 prompts（根据 XBRL 可用性决定跳过哪些）
+    section_prompts = _build_section_prompts(xbrl_data)
 
-    # 2. MapReduce
+    # 2. 确定要跳过的章节（有 XBRL 时不需要 LLM 读 financials/governance）
+    skip_sections = set()
+    if "financials" not in section_prompts:
+        skip_sections.add("financials")
+    if "governance" not in section_prompts:
+        skip_sections.add("governance")
+
+    # 3. 拆段（跳过 XBRL 已覆盖的章节）
+    chunks = chunk_10k(content, skip_sections=skip_sections)
+
+    # 4. MapReduce LLM 提取
     tables = await map_reduce_extract(
         chunks=chunks,
-        section_prompts=SECTION_PROMPTS,
+        section_prompts=section_prompts,
         dedup_keys=DEDUP_KEYS,
         max_tokens=12000,
     )
 
-    # 3. 包装结果
+    # 5. 合并 XBRL 数据
+    if xbrl_data:
+        tables = _merge_xbrl_into_tables(tables, xbrl_data)
+
+    # 6. 包装结果
     result = ExtractionResult(
         company_ticker=metadata.get("ticker", ""),
         company_name=metadata.get("company_name", ""),
@@ -407,5 +541,6 @@ async def extract_annual_report(
 
     logger.info(f"[10-K] 提取完成: {metadata.get('ticker', '?')} "
                 f"| {sum(len(v) for v in tables.values())} 行 "
-                f"| {list(tables.keys())}")
+                f"| {list(tables.keys())} "
+                f"| XBRL={'✓' if xbrl_data and xbrl_data.has_xbrl else '✗'}")
     return result

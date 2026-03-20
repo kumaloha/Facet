@@ -1,7 +1,7 @@
 """
-公司数据入库脚本
-================
-从 SEC EDGAR 下载文件 → 提取 → 写入 Anchor DB。
+公司数据入库脚本（XBRL-first）
+==============================
+从 SEC EDGAR 下载文件 → XBRL 提取 → LLM 补充叙述 → 写入 Anchor DB。
 
 用法:
     python scripts/ingest_company.py AAPL
@@ -68,16 +68,24 @@ async def ingest_company(ticker: str, forms: list[str] | None = None):
         text = doc.text() if hasattr(doc, "text") else str(doc)
         logger.info(f"  文档长度: {len(text):,} chars")
 
+        # 确定报告期间（修复：用 period_of_report 而非 filing_date）
+        period_date = getattr(latest, "period_of_report", None) or latest.filing_date
+        period = f"FY{period_date.year}"
+
         # 提取
         t0 = time.time()
         metadata = {
             "ticker": ticker,
-            "period": f"FY{latest.filing_date.year}",
+            "period": period,
             "company_name": c.name,
             "filing_date": str(latest.filing_date),
+            "period_of_report": str(period_date),
             "form": form,
         }
-        result = await extract_document(text, doc_type, metadata)
+
+        # 对 10-K 传入 filing 对象以启用 XBRL-first
+        filing_obj = latest if doc_type == "annual_report" else None
+        result = await extract_document(text, doc_type, metadata, filing=filing_obj)
         extract_time = time.time() - t0
 
         table_summary = {k: len(v) for k, v in result.tables.items()}

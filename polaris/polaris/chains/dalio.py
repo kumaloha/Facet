@@ -1748,6 +1748,36 @@ def _compute_asset_impacts(
         score = max(-1.0, min(1.0, score))
         all_scores[asset_type] = (score, paths)
 
+    # ── 主导机制锁定输家（达利欧: 找到主要矛盾，然后找暴露最大的资产）──
+    # policy_response 排除在外——它是响应性变量，不是主要矛盾
+    # 主要矛盾是: inflation, credit, default, consumer, corporate 这些实体经济力量
+    real_dominants = [name for name in dominant_names if name != "policy_response"]
+    dom_name = real_dominants[0] if real_dominants else (list(dominant_names)[0] if dominant_names else None)
+    if dom_name:
+        dom_node = nodes[dom_name]
+        if abs(dom_node.value) > 0.3:  # 主导机制信号够强
+            for asset_type in all_scores:
+                for node_name, weight, sign in ASSET_CAUSAL_MAP.get(asset_type, []):
+                    if node_name == dom_name:
+                        exposure = weight * sign * dom_node.value
+                        # 暴露强负 = 这是主要矛盾下的最大输家
+                        if exposure < -0.15:
+                            old_score, old_paths = all_scores[asset_type]
+                            penalty = exposure * 0.5  # 额外惩罚
+                            all_scores[asset_type] = (
+                                old_score + penalty,
+                                old_paths + [f"主导{dom_name}输家罚{penalty:+.2f}"]
+                            )
+                        # 暴露强正 = 赢家加分
+                        elif exposure > 0.15:
+                            old_score, old_paths = all_scores[asset_type]
+                            bonus = exposure * 0.3
+                            all_scores[asset_type] = (
+                                old_score + bonus,
+                                old_paths + [f"主导{dom_name}赢家奖{bonus:+.2f}"]
+                            )
+                        break
+
     # ── 二阶导数奖励: 经济从衰退中加速恢复时从防守转进攻 ──
     # 达利欧: "看二阶导数——跌幅收窄且加速 = 该买进攻型了"
     # 条件: GDP 仍为负或低增长 + 但动量强正（从坑里往上爬）
