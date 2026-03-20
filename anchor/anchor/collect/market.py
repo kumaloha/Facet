@@ -228,6 +228,97 @@ FRED_SERIES: dict[str, str] = {
 }
 
 
+# 中国替代数据（通过 akshare）— 用于三角验证
+# indicator_name → (akshare_function, value_column, transform)
+CHINA_INDICATORS: dict[str, tuple[str, str, str]] = {
+    "cn_cpi_yoy": ("macro_china_cpi_monthly", "同比增长", "direct"),
+    "cn_ppi_yoy": ("macro_china_ppi_monthly", "当月同比", "direct"),
+    "cn_export_yoy": ("macro_china_exports_yoy", "出口-同比增长", "direct"),
+    "cn_import_yoy": ("macro_china_imports_yoy", "进口-同比增长", "direct"),
+    # GDP, LPR, 失业率等通过 akshare 的其他函数
+}
+
+
+async def update_china_indicators(
+    session: AsyncSession,
+    days: int = 90,
+) -> int:
+    """从 akshare 拉取中国替代指标，写入 macro_indicators。"""
+    try:
+        import akshare as ak
+    except ImportError:
+        logger.warning("akshare not installed, skipping China indicators")
+        return 0
+
+    import asyncio
+
+    now = _utcnow()
+    total = 0
+
+    for indicator, (func_name, col_name, transform) in CHINA_INDICATORS.items():
+        try:
+            df = await asyncio.to_thread(getattr(ak, func_name))
+        except Exception as e:
+            logger.warning(f"[akshare] Failed to fetch {func_name}: {e}")
+            continue
+
+        if df is None or df.empty:
+            continue
+
+        # 取最近的数据点
+        if col_name not in df.columns:
+            logger.warning(f"[akshare] Column {col_name} not found in {func_name}")
+            continue
+
+        existing = await _get_existing_macro_dates(session, indicator)
+
+        count = 0
+        for _, row in df.tail(days).iterrows():
+            # 尝试获取日期
+            date_col = None
+            for dc in ["日期", "月份", "date", "Date"]:
+                if dc in df.columns:
+                    date_col = dc
+                    break
+            if date_col is None:
+                continue
+
+            try:
+                d = row[date_col]
+                if hasattr(d, "date"):
+                    d = d.date()
+                elif isinstance(d, str):
+                    from datetime import date as date_cls
+                    d = date_cls.fromisoformat(d[:10])
+                else:
+                    continue
+            except Exception:
+                continue
+
+            if d in existing:
+                continue
+
+            val = row.get(col_name)
+            if val is None or (isinstance(val, float) and val != val):
+                continue
+
+            session.add(MacroIndicator(
+                trade_date=d,
+                indicator=indicator,
+                value=float(val),
+                source="akshare",
+                created_at=now,
+            ))
+            count += 1
+
+        if count > 0:
+            await session.flush()
+            total += count
+            logger.info(f"akshare: {indicator} +{count} rows")
+
+    return total
+
+
 async def update_fred_indicators(
     session: AsyncSession,
     days: int = 90,
@@ -337,6 +428,8 @@ async def market_update(
             result["macro"] = await update_macro_indicators(session, days=days)
             # FRED 宏观序列（达利欧链需要）
             result["macro"] += await update_fred_indicators(session, days=days)
+            # 中国替代数据（akshare）
+            result["macro"] += await update_china_indicators(session, days=days)
             await session.commit()
         except Exception as e:
             await session.rollback()

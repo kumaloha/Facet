@@ -156,6 +156,7 @@ class MacroContext:
     # 市场
     vix: float | None = None                      # VIX 波动率指数
     sp500_earnings_yield: float | None = None     # S&P 500 盈利收益率 (%)
+    dxy_yoy: float | None = None                  # 美元指数同比变化 (%, 正=强美元)
 
     # 就业
     unemployment_rate: float | None = None        # 失业率 (%)
@@ -1295,9 +1296,16 @@ def _compute_inflation_pressure(
     weights.append(0.5)
     inputs_used.append(f"consumer_pull={consumer.value * 0.5:+.2f}")
 
+    # 美元强度: 强美元压低进口通胀，弱美元推升通胀（大宗商品美元计价）
+    if macro.dxy_yoy is not None:
+        dollar_effect = -macro.dxy_yoy / 10.0  # DXY +10% → 通胀压力 -1.0
+        components.append(dollar_effect)
+        weights.append(0.4)
+        inputs_used.append(f"dollar={macro.dxy_yoy:+.0f}%")
+
     value = _weighted_tanh(components, weights)
-    n_avail = sum(1 for x in [cpi, inf_m] if x is not None) + 1
-    confidence = _node_confidence(n_avail, n_total)
+    n_avail = sum(1 for x in [cpi, inf_m, macro.dxy_yoy] if x is not None) + 1
+    confidence = _node_confidence(n_avail, n_total + 1)
     detail = f"通胀压力 {value:+.3f}"
 
     return MechanismNode(
@@ -1528,7 +1536,7 @@ def _propagate_causal_graph(macro: MacroContext) -> CausalGraphResult:
     }
 
     profile = COUNTRY_PROFILES.get(macro.country, CountryProfile())
-    asset_impacts = _compute_asset_impacts(nodes, profile)
+    asset_impacts = _compute_asset_impacts(nodes, profile, macro)
 
     return CausalGraphResult(
         nodes=nodes,
@@ -1541,13 +1549,15 @@ def _propagate_causal_graph(macro: MacroContext) -> CausalGraphResult:
 def _compute_asset_impacts(
     nodes: dict[str, MechanismNode],
     profile: CountryProfile | None = None,
+    macro: MacroContext | None = None,
 ) -> list[AssetImpact]:
-    """从机制节点计算资产影响 — 主导机制加权 + 国别适配 + 相对排名。
+    """从机制节点计算资产影响 — 主导机制加权 + 轨迹放大 + 国别适配 + 相对排名。
 
     普适方案:
     1. 识别主导机制
-    2. 国别 profile 调整各机制节点对资产的传导权重
-    3. 分组相对排名决定方向
+    2. 轨迹一致性放大（有轨迹数据时）
+    3. 国别 profile 调整各机制节点对资产的传导权重
+    4. 分组相对排名决定方向
     """
     if profile is None:
         profile = CountryProfile()
@@ -1560,6 +1570,53 @@ def _compute_asset_impacts(
     dominant_names = {node_strengths[0][0]}
     if len(node_strengths) > 1 and node_strengths[1][1] > node_strengths[0][1] * 0.7:
         dominant_names.add(node_strengths[1][0])  # 第二强的如果接近第一（>70%），也算主导
+
+    # ── 轨迹放大器: 用轨迹方向调整节点值 ──
+    # 原理: 如果节点当前值和轨迹方向一致（例如 corporate 为负且 GDP 在减速），
+    # 说明情况在恶化 → 放大信号。如果矛盾（corporate 为正但 GDP 在减速），
+    # 说明当前状态可能不可持续 → 衰减信号。
+    trajectory_adjusted = dict(nodes)  # 浅拷贝
+    if macro is not None:
+        trajectory_map = {
+            # node_name: (trajectory_signal, description)
+            "corporate_health": (macro.gdp_momentum, "GDP动量"),
+            "consumer_health": (macro.unemployment_direction, "失业方向"),  # 注意: 反向
+            "credit_availability": (macro.credit_impulse, "信贷脉冲"),
+            "inflation_pressure": (macro.inflation_momentum, "通胀动量"),
+            "policy_response": (macro.rate_direction, "利率方向"),  # 注意: 反向
+        }
+        for node_name, (traj, desc) in trajectory_map.items():
+            if traj is None or node_name not in nodes:
+                continue
+            node = nodes[node_name]
+            # 方向映射: 有些轨迹信号跟节点方向相反
+            traj_direction = traj
+            if node_name == "consumer_health":
+                traj_direction = -traj  # 失业上升 = consumer 方向为负
+            elif node_name == "policy_response":
+                traj_direction = -traj  # 利率上升 = policy 方向为负(紧缩)
+
+            # 一致性: 节点值和轨迹方向同号 = 一致
+            consistent = (node.value > 0 and traj_direction > 0) or (node.value < 0 and traj_direction < 0)
+            if consistent:
+                # 放大 15%: 趋势在延续
+                amplifier = 1.15
+            elif (node.value > 0.1 and traj_direction < -0.3) or (node.value < -0.1 and traj_direction > 0.3):
+                # 衰减 10%: 当前状态可能不可持续（保守衰减）
+                amplifier = 0.9
+            else:
+                amplifier = 1.0
+
+            if amplifier != 1.0:
+                trajectory_adjusted[node_name] = MechanismNode(
+                    name=node.name,
+                    value=max(-1.0, min(1.0, node.value * amplifier)),
+                    confidence=node.confidence,
+                    inputs_used=node.inputs_used,
+                    detail=node.detail + f" | 轨迹×{amplifier:.1f}({desc})",
+                )
+
+    nodes = trajectory_adjusted
 
     # ── 计算每个资产的加权分数 ──
     all_scores: dict[str, tuple[float, list[str]]] = {}
@@ -1798,7 +1855,7 @@ def _step_tilts(regime: CycleRegime, macro: MacroContext) -> tuple[ChainStep, li
         macro.inflation_momentum, macro.rate_direction,
     ))
 
-    if has_trajectory and False:  # 投射暂停: 线性外推精度不够，等非线性投射模型就绪后启用
+    if False:  # 投射暂停: 轨迹放大器已在因果图层面处理(v2方案)
         projected = _project_macro(macro, steps=2)
         graph_future = _propagate_causal_graph(projected)
         blended_impacts = _blend_asset_impacts(

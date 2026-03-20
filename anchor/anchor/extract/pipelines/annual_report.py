@@ -57,27 +57,53 @@ def chunk_10k(content: str) -> list[ChunkMeta]:
         for m in re.finditer(pattern, content):
             positions.append((m.start(), section_name))
 
-    # 过滤噪声匹配
+    # 过滤噪声匹配（TOC 条目、交叉引用）
+    # 策略：对每种 section type，选"后续内容最长"的匹配（真正的 section header
+    # 后面跟大段正文；TOC 条目后面紧接着下一个条目；交叉引用在段落中间）
     if len(positions) > 2:
         positions.sort(key=lambda x: x[0])
-        filtered = []
+
+        # 先过滤明显的交叉引用
+        non_xref = []
         for i, (start, name) in enumerate(positions):
-            next_start = positions[i + 1][0] if i + 1 < len(positions) else len(content)
-            gap = next_start - start
-
-            # 1) 目录页：多个 marker 密集聚集（间距 < 500 chars）
-            if gap < 500:
-                continue
-
-            # 2) 交叉引用："Items 1 and 2. Business...of this report"
-            #    正文 section 标题后面不会紧跟 "of this report"
             after = content[start:start + 200]
-            if re.search(r"of\s+this\s+report", after, re.IGNORECASE):
+            # "of this report" / "of this form" = 交叉引用
+            if re.search(r"of\s+this\s+(report|form)", after, re.IGNORECASE):
                 continue
+            # 行内引用：marker 前面同一行有 see/in/under 等引导词
+            line_start = content.rfind("\n", max(0, start - 200), start)
+            if line_start == -1:
+                line_start = 0
+            prefix = content[line_start:start].strip()
+            if re.search(
+                r"(?i)\b(see|under|per|described\s+in|set\s+forth\s+in|"
+                r"refer\s+to|discussed\s+in|included\s+in)\s*$",
+                prefix,
+            ):
+                continue
+            non_xref.append((start, name))
 
-            filtered.append((start, name))
-        if len(filtered) >= 2:
-            positions = filtered
+        # 对每种 section type，选内容跨度最大的匹配
+        if len(non_xref) >= 2:
+            # 计算每个匹配到下一个匹配的距离（= 该 section 的内容长度）
+            by_section: dict[str, list[tuple[int, int]]] = {}  # name → [(start, span)]
+            for i, (start, name) in enumerate(non_xref):
+                next_start = (non_xref[i + 1][0]
+                              if i + 1 < len(non_xref) else len(content))
+                span = next_start - start
+                if name not in by_section:
+                    by_section[name] = []
+                by_section[name].append((start, span))
+
+            # 选每种 type 中 span 最大的那个
+            best = []
+            for name, candidates in by_section.items():
+                winner = max(candidates, key=lambda x: x[1])
+                best.append((winner[0], name))
+            best.sort(key=lambda x: x[0])
+
+            if len(best) >= 2:
+                positions = best
 
     if len(positions) < 2:
         # 无法识别章节，按长度切

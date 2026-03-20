@@ -863,6 +863,506 @@ GLOBAL_SCENARIOS = {
             "青年失业率超20%。人民币跌破7.2。外资加速撤离。"
         ),
     },
+
+    # ══════════════════════════════════════════════════════════════════
+    #  美国 (US) — 补充场景
+    # ══════════════════════════════════════════════════════════════════
+
+    "US 1998 LTCM危机": {
+        "macro": MacroContext(
+            gdp_growth_actual=4.5,
+            gdp_growth_expected=3.0,
+            cpi_actual=1.5,
+            cpi_expected=2.5,
+            fed_funds_rate=4.75,      # 9-11月三连降后（5.5%→4.75%）
+            credit_growth=8.0,        # [est]
+            total_debt_to_gdp=185,    # [est]
+            unemployment_rate=4.5,
+            snapshot_date="1998-10-01",
+        ),
+        "expected_quadrant": "growth_up_inflation_down",
+        "expected_winners": ["nominal_bond", "cash"],
+        "expected_losers": ["equity_cyclical", "commodity"],
+        "fact": (
+            "1998.9: LTCM濒临破产，14家银行注入36亿美元救助。"
+            "俄罗斯债务违约+亚洲金融危机蔓延。S&P500 8月跌19%后V型反弹，全年涨27%。"
+            "30Y国债收益率从5.6%降到5.1%。美联储紧急降息3次。"
+        ),
+    },
+
+    "US 2004 格林斯潘加息周期起点": {
+        "macro": MacroContext(
+            gdp_growth_actual=3.8,
+            gdp_growth_expected=3.5,
+            cpi_actual=2.7,
+            cpi_expected=2.0,
+            fed_funds_rate=2.25,      # 从1%加到2.25%（6月开始加息）
+            credit_growth=9.0,        # [est] 房贷加速
+            total_debt_to_gdp=220,    # [est]
+            unemployment_rate=5.5,
+            snapshot_date="2004-12-01",
+        ),
+        "expected_quadrant": "growth_up_inflation_up",
+        "expected_winners": ["equity_cyclical", "commodity"],
+        "expected_losers": ["nominal_bond", "cash"],
+        "fact": (
+            "2004: 格林斯潘6月启动'measured pace'加息（1%→2.25%）。"
+            "S&P500涨9%。大宗商品涨17%。10Y收益率从3.9%升到4.2%。"
+            "房地产市场火热，次贷机器全速运转。"
+        ),
+    },
+
+    "US 2010 QE2+缓慢复苏": {
+        "macro": MacroContext(
+            gdp_growth_actual=2.5,
+            gdp_growth_expected=3.0,
+            cpi_actual=1.6,
+            cpi_expected=2.0,
+            fed_funds_rate=0.25,
+            credit_growth=0.0,        # [est] 信贷几乎零增长
+            total_debt_to_gdp=360,    # [est]
+            unemployment_rate=9.6,
+            snapshot_date="2010-11-03",
+        ),
+        "expected_quadrant": "growth_down_inflation_down",
+        "expected_winners": ["equity_cyclical", "gold", "nominal_bond"],
+        "expected_losers": ["cash"],
+        "fact": (
+            "2010.11.3: 伯南克宣布QE2——购买6000亿美元国债。"
+            "S&P500涨13%。黄金涨30%（1100→1420）。10Y从2.5%升到3.3%。"
+            "失业率高达9.6%，核心CPI仅1.0%——通缩恐惧驱动QE2。"
+        ),
+    },
+
+    "US 2016 Trump当选+再通胀交易": {
+        "macro": MacroContext(
+            gdp_growth_actual=1.7,
+            gdp_growth_expected=2.0,
+            cpi_actual=1.3,
+            cpi_expected=2.0,
+            fed_funds_rate=0.75,      # 12月加息到0.75%
+            credit_growth=4.0,        # [est]
+            total_debt_to_gdp=345,    # [est]
+            unemployment_rate=4.7,
+            snapshot_date="2016-11-08",
+        ),
+        "expected_quadrant": "growth_down_inflation_down",
+        "expected_winners": ["equity_cyclical", "commodity"],
+        "expected_losers": ["nominal_bond", "gold"],
+        "fact": (
+            "2016.11.8: Trump意外当选→'再通胀交易'爆发。"
+            "S&P500涨10%。银行股暴涨30%。10Y从1.8%飙到2.6%（债券大跌）。"
+            "黄金选举后跌11%。12月美联储全年唯一一次加息。"
+        ),
+    },
+
+    "US 2019 保险性降息": {
+        "macro": MacroContext(
+            gdp_growth_actual=2.2,
+            gdp_growth_expected=2.5,
+            cpi_actual=1.8,
+            cpi_expected=2.0,
+            fed_funds_rate=1.75,      # 从2.5%降到1.75%（7/9/10月各降25bp）
+            credit_growth=5.0,        # [est]
+            total_debt_to_gdp=350,    # [est]
+            unemployment_rate=3.5,    # 50年新低
+            snapshot_date="2019-10-30",
+        ),
+        "expected_quadrant": "growth_down_inflation_down",
+        "expected_winners": ["equity_cyclical", "nominal_bond", "gold"],
+        "expected_losers": ["cash"],
+        "fact": (
+            "2019: 美联储180度转向——从加息改为3次降息（2.5%→1.75%）。"
+            "S&P500涨29%。10Y国债涨（收益率从2.7%降到1.9%）。黄金涨18%。"
+            "失业率降至3.5%（50年新低）。贸易战缓和+保险性降息推动万物上涨。"
+        ),
+    },
+
+    # ══════════════════════════════════════════════════════════════════
+    #  日本 (JP) — 补充场景
+    # ══════════════════════════════════════════════════════════════════
+
+    "JP 1997 亚洲金融危机+消费税加税": {
+        "macro": MacroContext(
+            gdp_growth_actual=1.6,
+            gdp_growth_expected=2.5,
+            cpi_actual=1.8,
+            cpi_expected=1.0,
+            fed_funds_rate=0.5,       # BOJ call rate
+            credit_growth=1.0,        # [est] 银行坏账严重
+            total_debt_to_gdp=290,    # [est]
+            unemployment_rate=3.4,
+            snapshot_date="1997-11-01",
+        ),
+        "expected_quadrant": "growth_down_inflation_up",
+        "expected_winners": ["nominal_bond", "cash"],
+        "expected_losers": ["equity_cyclical"],
+        "fact": (
+            "1997: 4月消费税从3%加到5%→内需崩溃。亚洲金融危机冲击。"
+            "11月山一证券、北海道拓殖银行倒闭。日经全年跌21%。"
+            "JGB大涨（收益率从2.4%降到1.5%）。金融系统性风险爆发。"
+        ),
+    },
+
+    "JP 2011 大地震+核灾": {
+        "macro": MacroContext(
+            gdp_growth_actual=-0.1,
+            gdp_growth_expected=1.5,
+            cpi_actual=-0.3,
+            cpi_expected=0.0,
+            fed_funds_rate=0.1,       # BOJ call rate
+            credit_growth=1.0,        # [est]
+            total_debt_to_gdp=390,    # [est] 财政赤字/GDP约10%
+            unemployment_rate=4.6,
+            snapshot_date="2011-03-11",
+        ),
+        "expected_quadrant": "growth_down_inflation_down",
+        "expected_winners": ["nominal_bond", "cash"],
+        "expected_losers": ["equity_cyclical", "commodity"],
+        "fact": (
+            "2011.3.11: 东日本大地震+福岛核灾。日经年内跌17%。"
+            "日元反而升值到76（避险+保险资金回流）。BOJ紧急注入流动性。"
+            "JGB收益率从1.2%降到1.0%。重建支出推高财政赤字到GDP的10%。"
+        ),
+    },
+
+    "JP 2016 负利率实验": {
+        "macro": MacroContext(
+            gdp_growth_actual=0.5,
+            gdp_growth_expected=1.0,
+            cpi_actual=-0.1,
+            cpi_expected=2.0,         # BOJ目标（从未达到）
+            fed_funds_rate=-0.1,      # BOJ负利率（1月引入）
+            credit_growth=2.0,        # [est]
+            total_debt_to_gdp=410,    # [est]
+            unemployment_rate=3.1,
+            snapshot_date="2016-01-29",
+        ),
+        "expected_quadrant": "growth_down_inflation_down",
+        "expected_winners": ["nominal_bond"],
+        "expected_losers": ["equity_cyclical", "cash"],
+        "fact": (
+            "2016.1.29: BOJ引入负利率（-0.1%）+9月推出YCC。"
+            "日经全年跌0.4%。10Y JGB收益率一度跌到-0.3%。"
+            "CPI连续8个月为负。日元反而升值（避险），BOJ政策效果存疑。"
+        ),
+    },
+
+    "JP 2020 COVID冲击": {
+        "macro": MacroContext(
+            gdp_growth_actual=-4.5,
+            gdp_growth_expected=0.5,
+            cpi_actual=0.0,           # [est] 接近零通胀
+            cpi_expected=0.5,
+            fed_funds_rate=-0.1,      # BOJ负利率
+            credit_growth=6.0,        # [est] 政府贷款担保推动
+            total_debt_to_gdp=430,    # [est] 财政大规模扩张
+            unemployment_rate=2.8,
+            snapshot_date="2020-05-01",
+        ),
+        "expected_quadrant": "growth_down_inflation_down",
+        "expected_winners": ["nominal_bond", "gold"],
+        "expected_losers": ["equity_cyclical", "commodity"],
+        "fact": (
+            "2020: 日本GDP跌4.5%。紧急事态宣言（非强制封城）。"
+            "日经从16358低点反弹至年末27444（+16%全年）。日元小幅升值。"
+            "BOJ加大ETF购买到12万亿日元/年。失业率仅升至2.8%（就业保护）。"
+        ),
+    },
+
+    # ══════════════════════════════════════════════════════════════════
+    #  欧洲 (EU) — 补充场景
+    # ══════════════════════════════════════════════════════════════════
+
+    "EU 2008 全球金融危机": {
+        "macro": MacroContext(
+            gdp_growth_actual=0.4,
+            gdp_growth_expected=1.5,
+            cpi_actual=3.3,
+            cpi_expected=2.0,
+            fed_funds_rate=2.5,       # ECB主要再融资利率（年末，从4.25%一路降）
+            credit_growth=4.0,        # [est] 急剧减速
+            total_debt_to_gdp=270,    # [est]
+            unemployment_rate=7.6,
+            snapshot_date="2008-10-01",
+        ),
+        "trajectory": [
+            # ECB犯下政策错误: 7月加息到4.25%，10月才开始紧急降息
+            MacroSnapshot(date="2008-Q1", gdp_growth=0.7, cpi=3.4, fed_funds_rate=4.0,
+                          credit_growth=8.0, unemployment_rate=7.2),     # [est]
+            MacroSnapshot(date="2008-Q2", gdp_growth=0.5, cpi=3.6, fed_funds_rate=4.25,
+                          credit_growth=6.0, unemployment_rate=7.4),     # [est] 7月加息!
+            MacroSnapshot(date="2008-Q3", gdp_growth=0.4, cpi=3.3, fed_funds_rate=2.5,
+                          credit_growth=4.0, unemployment_rate=7.6,
+                          total_debt_to_gdp=270),
+        ],
+        "expected_quadrant": "growth_down_inflation_up",
+        "expected_winners": ["nominal_bond", "gold", "cash"],
+        "expected_losers": ["equity_cyclical", "commodity"],
+        "fact": (
+            "2008: ECB 7月逆势加息到4.25%（对抗油价通胀）→政策错误。"
+            "10月紧急降息。欧洲斯托克600跌46%。油价从147跌到40。"
+            "冰岛银行系统崩溃。爱尔兰全面担保银行债务。"
+        ),
+    },
+
+    "EU 2011 主权债危机高潮": {
+        "macro": MacroContext(
+            gdp_growth_actual=1.6,
+            gdp_growth_expected=1.5,
+            cpi_actual=2.7,
+            cpi_expected=2.0,
+            fed_funds_rate=1.0,       # ECB主要再融资利率（年末，4/7月两次加息后11/12月降回）
+            credit_growth=1.0,        # [est]
+            total_debt_to_gdp=285,    # [est]
+            unemployment_rate=10.2,
+            snapshot_date="2011-11-01",
+        ),
+        "expected_quadrant": "growth_up_inflation_up",
+        "expected_winners": ["gold", "cash"],
+        "expected_losers": ["equity_cyclical", "nominal_bond"],
+        "fact": (
+            "2011: ECB犯第二次政策错误——4月和7月加息（对抗通胀）。"
+            "意大利10Y飙到7%。PIIGS利差暴走。11月ECB紧急降息。"
+            "欧洲斯托克600跌11%。黄金涨10%。德债反而大涨（避险）。"
+        ),
+    },
+
+    "EU 2016 Brexit公投+负利率": {
+        "macro": MacroContext(
+            gdp_growth_actual=1.9,
+            gdp_growth_expected=1.5,
+            cpi_actual=0.2,
+            cpi_expected=2.0,
+            fed_funds_rate=0.0,       # ECB主要再融资利率（3月降到0%）
+            credit_growth=2.0,        # [est]
+            total_debt_to_gdp=290,    # [est]
+            unemployment_rate=10.0,
+            snapshot_date="2016-06-23",
+        ),
+        "expected_quadrant": "growth_up_inflation_down",
+        "expected_winners": ["nominal_bond", "gold"],
+        "expected_losers": ["equity_cyclical"],
+        "fact": (
+            "2016.6.23: 英国公投脱欧——全球恐慌。英镑单日跌8%。"
+            "ECB 3月降再融资利率到0%，存款利率-0.4%，扩大QE到800亿/月。"
+            "欧洲斯托克600全年微跌1%。德国10Y一度跌到-0.19%。黄金涨9%。"
+        ),
+    },
+
+    "EU 2020 COVID+PEPP": {
+        "macro": MacroContext(
+            gdp_growth_actual=-6.1,
+            gdp_growth_expected=1.2,
+            cpi_actual=0.3,
+            cpi_expected=2.0,
+            fed_funds_rate=0.0,       # ECB主要再融资利率
+            credit_growth=5.0,        # [est] 政府担保贷款
+            total_debt_to_gdp=310,    # [est] 财政刺激约14%GDP
+            unemployment_rate=7.9,
+            snapshot_date="2020-03-18",
+        ),
+        "expected_quadrant": "growth_down_inflation_down",
+        "expected_winners": ["nominal_bond", "gold"],
+        "expected_losers": ["equity_cyclical", "commodity"],
+        "fact": (
+            "2020.3.18: ECB推出PEPP（7500亿→最终1.85万亿欧元购债计划）。"
+            "欧元区GDP跌6.1%。斯托克600跌4%（V型反弹后收窄）。"
+            "德国10Y维持在-0.5%附近。财政支持约占GDP 14%。"
+        ),
+    },
+
+    # ══════════════════════════════════════════════════════════════════
+    #  中国 (CN) — 补充场景
+    # ══════════════════════════════════════════════════════════════════
+
+    "CN 2009 四万亿后遗症显现": {
+        "macro": MacroContext(
+            gdp_growth_actual=9.4,     # 官方（四万亿强力拉动）
+            gdp_growth_expected=8.0,
+            cpi_actual=-0.7,           # 全年通缩
+            cpi_expected=2.0,
+            fed_funds_rate=5.31,       # PBOC一年期贷款基准利率
+            credit_growth=32.0,        # 新增贷款9.6万亿（翻倍!）
+            total_debt_to_gdp=170,     # [est] 急剧攀升
+            unemployment_rate=4.3,     # 官方
+            snapshot_date="2009-06-01",
+            # 替代指标
+            alt_electricity_growth=6.0,              # [est] 下半年V型反弹
+            alt_freight_growth=-1.0,             # [est] 全年微降
+            alt_property_investment_growth=16.0,      # 地产投资反弹
+            alt_export_growth=-16.0,                  # 出口暴跌
+            alt_import_growth=-11.0,                  # 进口大跌
+            alt_broad_credit_growth=34.0,             # 社融暴增
+        ),
+        "expected_quadrant": "growth_up_inflation_down",
+        "expected_winners": ["equity_cyclical", "commodity"],
+        "expected_losers": ["cash"],
+        "fact": (
+            "2009: 四万亿刺激→信贷暴增到9.6万亿元（翻倍）。GDP保住8%。"
+            "沪指涨80%。铜价翻倍。CPI全年为负但PPI年底转正。"
+            "地方融资平台和产能过剩的种子大规模埋下。"
+        ),
+    },
+
+    "CN 2011 紧缩对抗通胀": {
+        "macro": MacroContext(
+            gdp_growth_actual=9.5,     # 官方
+            gdp_growth_expected=9.0,
+            cpi_actual=5.4,
+            cpi_expected=3.0,
+            fed_funds_rate=6.56,       # PBOC一年期贷款基准利率（年内加息3次）
+            credit_growth=14.0,        # [est]
+            total_debt_to_gdp=190,     # [est]
+            unemployment_rate=4.1,     # 官方
+            snapshot_date="2011-07-01",
+            # 替代指标
+            alt_electricity_growth=12.0,             # 用电量强劲
+            alt_property_investment_growth=28.0,      # 地产投资仍高
+            alt_export_growth=20.0,                   # 出口强劲
+            alt_import_growth=25.0,                   # 进口强劲
+            alt_broad_credit_growth=15.0,             # [est]
+        ),
+        "expected_quadrant": "growth_up_inflation_up",
+        "expected_winners": ["commodity", "gold"],
+        "expected_losers": ["equity_cyclical", "nominal_bond"],
+        "fact": (
+            "2011: CPI 7月达6.5%（猪肉+输入型通胀）。PBOC加息3次+提准6次。"
+            "沪深300跌25%。温州民间借贷崩盘。房地产调控加码（限购令）。"
+            "黄金涨10%。大宗商品先涨后跌。典型'紧缩杀估值'。"
+        ),
+    },
+
+    "CN 2018 贸易战": {
+        "macro": MacroContext(
+            gdp_growth_actual=6.7,     # 官方
+            gdp_growth_expected=6.5,
+            cpi_actual=2.1,
+            cpi_expected=3.0,
+            fed_funds_rate=4.35,       # PBOC一年期MLF利率（实际已不再调整基准利率）
+            credit_growth=10.0,        # [est] 去杠杆导致信贷收缩
+            total_debt_to_gdp=260,     # [est]
+            unemployment_rate=4.9,     # 官方（调查失业率）
+            snapshot_date="2018-10-01",
+            # 替代指标
+            alt_electricity_growth=8.5,
+            alt_property_investment_growth=9.5,
+            alt_export_growth=10.0,                   # 抢出口效应
+            alt_import_growth=16.0,                   # 进口强
+            alt_auto_sales_growth=-2.8,               # 汽车销量28年首降
+            alt_broad_credit_growth=9.8,              # 社融增速急降（去杠杆）
+        ),
+        "expected_quadrant": "growth_down_inflation_down",
+        "expected_winners": ["nominal_bond", "cash"],
+        "expected_losers": ["equity_cyclical"],
+        "fact": (
+            "2018: 中美贸易战+去杠杆共振。沪深300跌25%。"
+            "P2P暴雷潮。社融增速从12%骤降到9.8%。信用紧缩冲击民企。"
+            "中国10Y国债收益率从3.9%降到3.2%（债牛）。现金为王。"
+        ),
+    },
+
+    "CN 2023 复苏不及预期+通缩": {
+        "macro": MacroContext(
+            gdp_growth_actual=5.2,     # 官方（低基数效应）
+            gdp_growth_expected=5.5,
+            cpi_actual=0.2,            # 接近通缩
+            cpi_expected=2.0,
+            fed_funds_rate=3.45,       # PBOC一年期MLF利率
+            credit_growth=10.0,        # [est]
+            total_debt_to_gdp=310,     # [est]
+            unemployment_rate=5.2,     # 官方（青年失业率超21%后停止发布）
+            snapshot_date="2023-10-01",
+            # 替代指标
+            alt_electricity_growth=6.7,
+            alt_property_investment_growth=-9.6,       # 地产投资持续暴跌
+            alt_property_sales_growth=-8.5,           # 商品房销售继续下滑
+            alt_land_revenue_growth=-13.0,        # [est] 土地出让金继续萎缩
+            alt_export_growth=-4.6,                    # 出口负增长
+            alt_import_growth=-5.5,                    # 进口负增长
+            alt_auto_sales_growth=12.0,                # 新能源车拉动
+            alt_broad_credit_growth=9.5,               # [est] 社融放缓
+        ),
+        "expected_quadrant": "growth_down_inflation_down",
+        "expected_winners": ["nominal_bond", "gold"],
+        "expected_losers": ["equity_cyclical", "commodity"],
+        "fact": (
+            "2023: 疫后复苏远逊预期。CPI仅0.2%（核心CPI 0.7%），PPI全年为负。"
+            "沪深300跌11%。恒生跌14%。中国10Y收益率从2.8%降到2.6%。"
+            "碧桂园违约。青年失业率超21%后NBS停止发布。房地产持续拖累。"
+        ),
+    },
+
+    # ══════════════════════════════════════════════════════════════════
+    #  新兴市场 (EM) — 巴西、土耳其、印度
+    # ══════════════════════════════════════════════════════════════════
+
+    "BR 2015 巴西危机": {
+        "macro": MacroContext(
+            gdp_growth_actual=-3.5,
+            gdp_growth_expected=1.0,
+            cpi_actual=10.7,
+            cpi_expected=4.5,         # 巴西央行目标
+            fed_funds_rate=14.25,     # Selic利率（从11.75%加到14.25%）
+            credit_growth=6.0,        # [est] 信贷减速
+            total_debt_to_gdp=140,    # [est] 公共债务/GDP约66%，含私人部门
+            unemployment_rate=8.5,    # 全年均值（年末接近9%）
+            snapshot_date="2015-08-01",
+        ),
+        "expected_quadrant": "growth_down_inflation_up",
+        "expected_winners": ["cash", "gold"],
+        "expected_losers": ["equity_cyclical", "nominal_bond"],
+        "fact": (
+            "2015: 巴西陷入1930年代以来最严重衰退。GDP跌3.5%。"
+            "Selic加到14.25%仍压不住10%+通胀。雷亚尔贬值33%。"
+            "Bovespa跌13%。Petrobras腐败丑闻。失业人口增100万+。"
+        ),
+    },
+
+    "TR 2018 土耳其货币危机": {
+        "macro": MacroContext(
+            gdp_growth_actual=3.0,
+            gdp_growth_expected=5.0,
+            cpi_actual=16.3,          # 年均（10月峰值25%）
+            cpi_expected=5.0,         # 央行目标
+            fed_funds_rate=24.0,      # TCMB一周回购利率（9月从17.75%加到24%）
+            credit_growth=15.0,       # [est] 里拉贬值后信贷收缩
+            total_debt_to_gdp=160,    # [est] 含大量外币债务
+            unemployment_rate=11.0,   # 年均（年末攀升到14%+）
+            snapshot_date="2018-08-13",
+        ),
+        "expected_quadrant": "growth_down_inflation_up",
+        "expected_winners": ["gold", "commodity"],
+        "expected_losers": ["equity_cyclical", "nominal_bond"],
+        "fact": (
+            "2018.8: 里拉单月暴跌40%（对美元从4.8跌到7.2）。"
+            "埃尔多安拒绝加息→市场恐慌。央行被迫一次性加息625bp到24%。"
+            "BIST100跌20%（美元计价跌50%+）。通胀10月达25%。"
+            "外币债务/GDP高企是最大脆弱性。典型新兴市场双赤字危机。"
+        ),
+    },
+
+    "IN 2020 印度COVID冲击": {
+        "macro": MacroContext(
+            gdp_growth_actual=-7.3,    # FY2020-21（4月-3月）
+            gdp_growth_expected=5.0,
+            cpi_actual=6.2,           # CPI高于RBI目标上限
+            cpi_expected=4.0,         # RBI目标
+            fed_funds_rate=4.0,       # RBI repo rate（从5.15%降到4.0%）
+            credit_growth=6.0,        # [est]
+            total_debt_to_gdp=190,    # [est] 含公共+私人部门
+            unemployment_rate=8.0,    # [est] 年均（4月峰值超23%）
+            snapshot_date="2020-05-01",
+        ),
+        "expected_quadrant": "growth_down_inflation_up",
+        "expected_winners": ["gold", "nominal_bond"],
+        "expected_losers": ["equity_cyclical"],
+        "fact": (
+            "2020: 印度GDP跌7.3%（Q1跌24%为全球最惨之一）。严格封城重创经济。"
+            "RBI降息115bp到4%。Sensex从25639低点反弹至年末47751（+16%全年）。"
+            "CPI维持6%+（食品通胀），卢比贬值3%。黄金以卢比计涨28%。"
+        ),
+    },
 }
 
 
@@ -881,6 +1381,15 @@ COUNTRY_CONTEXT = {
     "CN": dict(hist_rate_median=5.0, hist_rate_p25=4.0, hist_rate_p75=6.0,
                hist_unemployment_median=4.0, hist_gdp_median=7.0,
                hist_credit_growth_median=14.0, hist_cpi_median=2.5),
+    "BR": dict(hist_rate_median=12.0, hist_rate_p25=7.0, hist_rate_p75=14.0,
+               hist_unemployment_median=8.0, hist_gdp_median=2.5,
+               hist_credit_growth_median=10.0, hist_cpi_median=5.0),
+    "TR": dict(hist_rate_median=15.0, hist_rate_p25=8.0, hist_rate_p75=20.0,
+               hist_unemployment_median=10.0, hist_gdp_median=5.0,
+               hist_credit_growth_median=15.0, hist_cpi_median=10.0),
+    "IN": dict(hist_rate_median=6.0, hist_rate_p25=4.5, hist_rate_p75=8.0,
+               hist_unemployment_median=5.0, hist_gdp_median=6.5,
+               hist_credit_growth_median=12.0, hist_cpi_median=5.0),
 }
 
 

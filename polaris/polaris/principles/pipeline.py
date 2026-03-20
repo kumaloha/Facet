@@ -318,7 +318,8 @@ def run_pipeline(
             ),
         )
 
-    # ── 索罗斯 ──
+    # ── 索罗斯 (Layer 3: 市场偏差检测 — 以达利欧输出为输入) ──
+    # 公司级反身性（V1 规则）
     s_score = evaluate_school(School.SOROS, features)
     phase = _determine_reflexivity_phase(features)
 
@@ -354,6 +355,34 @@ def run_pipeline(
                 soros_result.expectation_gap = rdcf.implied_growth_rate - actual_growth
 
     result.soros = soros_result
+
+    # ── 宏观级索罗斯 (Pure Alpha 第二条腿 — 达利欧预测 vs 市场定价) ──
+    if result.dalio is not None:
+        try:
+            from polaris.chains.soros import MarketImplied, evaluate_soros
+            from polaris.db.anchor import get_latest_macro
+
+            market_implied = MarketImplied(
+                breakeven_5y=get_latest_macro("breakeven_inflation_5y"),
+                breakeven_10y=get_latest_macro("breakeven_inflation_10y"),
+                credit_spread_ig=get_latest_macro("credit_spread_ig"),
+                credit_spread_hy=get_latest_macro("credit_spread_hy"),
+                vix=mkt.get("vix") or (macro_ctx.vix if 'macro_ctx' in dir() else None),
+            )
+            soros_macro = evaluate_soros(
+                dalio=result.dalio,
+                market=market_implied,
+                current_rate=macro_ctx.fed_funds_rate if 'macro_ctx' in dir() else None,
+            )
+            # 存储宏观级索罗斯结果到 soros_result 的 detail 中
+            if soros_macro.alpha_opportunities:
+                top = soros_macro.alpha_opportunities[0]
+                soros_result.vulnerability_if_reversal = (
+                    f"Alpha: {top.direction} {top.asset_type} "
+                    f"(信心 {top.conviction:.0%}) — {top.thesis[:60]}"
+                )
+        except Exception:
+            pass  # 宏观索罗斯是增强功能，失败不影响主流程
 
     return result
 
