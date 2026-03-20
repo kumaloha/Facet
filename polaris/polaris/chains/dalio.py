@@ -190,6 +190,9 @@ class MacroContext:
     hist_credit_growth_median: float | None = None # 历史信贷增速中位数 (%)
     hist_cpi_median: float | None = None           # 历史 CPI 中位数 (%)
 
+    # 前期资产回报（用于均值回归信号）
+    prior_returns: dict[str, float] | None = None  # {asset: 去年回报%}
+
     # 国别 profile（影响因果引擎权重）
     country: str = "US"                           # US / JP / EU / CN
 
@@ -858,12 +861,18 @@ ASSET_CAUSAL_MAP: dict[str, list[tuple[str, float, float]]] = {
         ("consumer_health", 0.40, -1), ("corporate_health", 0.30, -1),
         ("default_pressure", 0.30, +1),
     ],
-    "nominal_bond": [
-        ("inflation_pressure", 0.30, -1),      # 通胀低→债券好
-        ("default_pressure", 0.30, +1),         # 避险需求→国债好（提权: 危机时最强驱动）
-        ("policy_response", 0.20, +1),          # 宽松→债券好
-        ("debt_service_burden", 0.10, -1),      # 偿债重→利率有下降空间→债券好
-        ("credit_availability", 0.10, -1),      # 信贷宽→经济好→利率上→债券差
+    "long_term_bond": [
+        ("inflation_pressure", 0.30, -1),      # 通胀低→长债好（久期长，对通胀最敏感）
+        ("default_pressure", 0.30, +1),         # 避险需求→国债好
+        ("policy_response", 0.25, +1),          # 宽松→长债好（久期放大效应）
+        ("credit_availability", 0.15, -1),      # 信贷宽→经济好→利率上→长债差
+    ],
+    "intermediate_bond": [
+        ("inflation_pressure", 0.25, -1),      # 通胀影响较小（久期短）
+        ("default_pressure", 0.25, +1),         # 避险需求
+        ("policy_response", 0.25, +1),          # 宽松→中债好（但幅度小于长债）
+        ("consumer_health", 0.15, -1),          # 消费弱→避险→中债好
+        ("credit_availability", 0.10, -1),
     ],
     "commodity": [
         ("inflation_pressure", 0.55, +1),  # 大宗受通胀/供给驱动为主
@@ -886,6 +895,12 @@ ASSET_CAUSAL_MAP: dict[str, list[tuple[str, float, float]]] = {
     "inflation_linked_bond": [
         ("inflation_pressure", 0.60, +1), ("policy_response", 0.20, +1),
         ("consumer_health", 0.20, +1),
+    ],
+    "em_bond": [
+        ("credit_availability", 0.30, +1),     # 全球信贷宽松→EM资金流入
+        ("corporate_health", 0.25, +1),         # 全球增长好→EM受益
+        ("policy_response", 0.20, +1),          # DM宽松→资金流向EM寻求收益
+        ("default_pressure", 0.25, -1),         # 全球风险偏好下降→EM资金外流
     ],
 }
 
@@ -1796,35 +1811,55 @@ def _compute_asset_impacts(
             old_score, old_paths = all_scores["equity_defensive"]
             all_scores["equity_defensive"] = (old_score - momentum_bonus * 0.5, old_paths)
 
+    # ── 均值回归信号: 去年涨太多的今年可能回调 ──
+    # 达利欧: "过度延伸的趋势终将反转"
+    if macro is not None and macro.prior_returns:
+        for asset_type, prior_ret in macro.prior_returns.items():
+            if asset_type not in all_scores:
+                continue
+            # 去年涨超 25% → 今年减分（均值回归）
+            if prior_ret > 25:
+                reversion_penalty = -(prior_ret - 25) / 50  # 35%→-0.2, 50%→-0.5
+                old_score, old_paths = all_scores[asset_type]
+                all_scores[asset_type] = (
+                    old_score + reversion_penalty,
+                    old_paths + [f"均值回归{reversion_penalty:+.2f}(去年{prior_ret:+.0f}%)"]
+                )
+            # 去年跌超 20% → 今年加分（超跌反弹）
+            elif prior_ret < -20:
+                rebound_bonus = -prior_ret / 100  # -30%→+0.3, -50%→+0.5
+                old_score, old_paths = all_scores[asset_type]
+                all_scores[asset_type] = (
+                    old_score + rebound_bonus,
+                    old_paths + [f"超跌反弹{rebound_bonus:+.2f}(去年{prior_ret:+.0f}%)"]
+                )
+
     # ── 债券收益/风险不对称惩罚 ──
     # 达利欧: 资产的上行空间和下行空间不对称时,要调整仓位
     #
     # 零利率时(< 1%): 债券上涨空间有限,下跌空间大 → 惩罚
     # 高通胀+零利率(2021): 利率正常化风险极大 → 加重惩罚
-    if macro is not None and macro.fed_funds_rate is not None and "nominal_bond" in all_scores:
+    if macro is not None and macro.fed_funds_rate is not None:
         rate = macro.fed_funds_rate
         cpi = macro.cpi_actual or 2.0
 
-        penalty = 0.0
-        reason = ""
-
         if rate < 1.0:
-            # 零利率: 基础惩罚
             penalty = -0.15 * (1.0 - rate)
             reason = f"零下界(rate={rate:.1f}%)"
-
-            # 通胀高于利率很多 → 利率正常化压力更大
             if cpi > rate + 2.0:
                 extra = -0.10 * (cpi - rate - 2.0) / 3.0
                 penalty += extra
                 reason += f"+通胀差({cpi-rate:.1f}pp)"
 
-        if penalty != 0:
-            old_score, old_paths = all_scores["nominal_bond"]
-            all_scores["nominal_bond"] = (
-                old_score + penalty,
-                old_paths + [f"债券不对称罚{penalty:+.2f}({reason})"]
-            )
+            # 长债受零下界影响最大（久期长→不对称性最强）
+            for bond_type, multiplier in [("long_term_bond", 1.0), ("intermediate_bond", 0.5)]:
+                if bond_type in all_scores and penalty != 0:
+                    old_score, old_paths = all_scores[bond_type]
+                    adj = penalty * multiplier
+                    all_scores[bond_type] = (
+                        old_score + adj,
+                        old_paths + [f"债券不对称罚{adj:+.2f}({reason})"]
+                    )
 
     # ── 零利率+低通胀: 黄金叙事风险 ──
     # QE 印钱→黄金该涨(通胀对冲)。但如果通胀一直不来→叙事破灭→黄金跌
@@ -1848,8 +1883,8 @@ def _compute_asset_impacts(
                 )
 
     # ── 分组相对排名 ──
-    RISK_GROUP = {"equity_cyclical", "equity_defensive", "commodity"}
-    SAFE_GROUP = {"nominal_bond", "gold", "cash", "inflation_linked_bond"}
+    RISK_GROUP = {"equity_cyclical", "equity_defensive", "commodity", "em_bond"}
+    SAFE_GROUP = {"long_term_bond", "intermediate_bond", "gold", "cash", "inflation_linked_bond"}
 
     risk_scores = {k: v for k, v in all_scores.items() if k in RISK_GROUP}
     safe_scores = {k: v for k, v in all_scores.items() if k in SAFE_GROUP}

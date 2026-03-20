@@ -16,17 +16,18 @@ from polaris.chains.soros import MarketImplied, evaluate_soros, compute_soros_ad
 # 达利欧引擎用: equity_cyclical, nominal_bond, inflation_linked_bond, commodity, gold, cash
 ASSET_MAP = {
     "equity":            "equity_cyclical",
-    "long_term_bond":    "nominal_bond",
-    "intermediate_bond": "nominal_bond",       # 也是名义债券，但优先用 long_term_bond
+    "long_term_bond":    "long_term_bond",
+    "intermediate_bond": "intermediate_bond",
     "commodity":         "commodity",
     "gold":              "gold",
     "tips":              "inflation_linked_bond",
-    "em_bond":           "em_bond",            # 引擎没有 em_bond，不参与匹配
+    "em_bond":           "em_bond",
 }
 
 # 达利欧引擎认识的资产类型
-ENGINE_ASSET_TYPES = {"equity_cyclical", "equity_defensive", "nominal_bond",
-                      "inflation_linked_bond", "commodity", "gold", "cash"}
+ENGINE_ASSET_TYPES = {"equity_cyclical", "equity_defensive", "long_term_bond",
+                      "intermediate_bond", "inflation_linked_bond", "commodity",
+                      "gold", "cash", "em_bond"}
 
 
 def get_winners_losers(year_data: dict[str, float], n: int = 2):
@@ -229,6 +230,15 @@ def main():
 
         # 1. 真实 winners/losers
         winners, losers = get_winners_losers(year_data)
+
+        # 注入前期回报（均值回归信号）
+        prev_year = year - 1
+        if prev_year in ACTUAL_RETURNS:
+            prior = ACTUAL_RETURNS[prev_year]
+            macro.prior_returns = {
+                ASSET_MAP.get(k, k): v for k, v in prior.items()
+                if ASSET_MAP.get(k) in ENGINE_ASSET_TYPES
+            }
 
         # 2. 引擎输出 — 达利欧 + 索罗斯联合
         # 先跑达利欧获取基本面预测
