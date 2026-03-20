@@ -43,6 +43,8 @@ async def ingest_company(ticker: str, forms: list[str] | None = None):
     }
 
     c = Company(ticker)
+    # 从 edgartools 获取行业信息（SIC industry），入库时传给 get_or_create_company
+    _industry = getattr(c, "industry", None) or ""
     total_rows = 0
 
     for form in forms:
@@ -88,6 +90,7 @@ async def ingest_company(ticker: str, forms: list[str] | None = None):
             "filing_date": str(latest.filing_date),
             "period_of_report": str(period_date),
             "form": form,
+            "industry": _industry,
         }
 
         # 对 10-K 传入 filing 对象以启用 XBRL-first

@@ -56,6 +56,8 @@ CONCEPT_MAP: list[tuple[str, str, str, bool]] = [
 
     # ── Balance Sheet (instant) ──
     ("Assets", "total_assets", "balance_sheet", False),
+    ("Liabilities", "total_liabilities", "balance_sheet", False),
+    ("LiabilitiesAndStockholdersEquity", "total_liabilities_and_equity", "balance_sheet", False),
     ("StockholdersEquity", "shareholders_equity", "balance_sheet", False),
     ("StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest", "shareholders_equity", "balance_sheet", False),
     ("Goodwill", "goodwill", "balance_sheet", False),

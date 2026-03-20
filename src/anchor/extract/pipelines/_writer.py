@@ -65,6 +65,17 @@ async def get_or_create_company(
     )
     existing = result.first()
     if existing:
+        # 补填缺失字段（industry 等可能在首次建档时为空）
+        updated = False
+        if industry and not existing.industry:
+            existing.industry = industry
+            updated = True
+        if name and (not existing.name or existing.name == ticker):
+            existing.name = name
+            updated = True
+        if updated:
+            session.add(existing)
+            await session.flush()
         return existing
 
     company = CompanyProfile(
@@ -267,6 +278,7 @@ async def write_extraction_result(
         session, ticker,
         name=result.company_name,
         market=market,
+        industry=result.metadata.get("industry"),
     )
     company_id = company.id
     period = result.period or "FY2025"

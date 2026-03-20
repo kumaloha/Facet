@@ -1004,18 +1004,30 @@ class ManagementAcknowledgment(SQLModel, table=True):
 
 
 class InsiderTransaction(SQLModel, table=True):
-    """内部人交易 — SEC Form 4 / 权益披露"""
+    """内部人交易 — SEC Form 3/4/5 批量数据"""
 
     __tablename__ = "insider_transactions"
 
     id: Optional[int] = Field(default=None, primary_key=True)
     company_id: int = Field(foreign_key="company_profiles.id", index=True)
+    accession_number: Optional[str] = Field(default=None, index=True)
     person_name: str
     title: Optional[str] = None
-    transaction_type: str = "buy"        # buy|sell|option_exercise
+    is_director: bool = False
+    is_officer: bool = False
+    is_ten_pct_owner: bool = False
+    transaction_type: str = "buy"  # buy|sell|gift|award|exercise|tax|conversion|other
+    transaction_code: Optional[str] = None   # P/S/G/A/M/F/C/X
+    security_title: Optional[str] = None
     shares: Optional[int] = None
     price_per_share: Optional[float] = None
+    value: Optional[float] = None            # shares * price
+    acquired_disposed: Optional[str] = None  # A / D
+    shares_post_transaction: Optional[int] = None
+    ownership_type: Optional[str] = None     # D=direct, I=indirect
+    is_10b5_1_plan: Optional[bool] = None
     transaction_date: Optional[date] = None
+    filing_date: Optional[date] = None
     raw_post_id: Optional[int] = Field(
         default=None, foreign_key="raw_posts.id", index=True
     )
