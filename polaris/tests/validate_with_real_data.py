@@ -8,6 +8,7 @@
 """
 
 from data_historical_returns import ACTUAL_RETURNS
+from data_market_implied import MARKET_IMPLIED_REAL
 from polaris.chains.dalio import MacroContext, evaluate, to_dalio_result
 from polaris.chains.soros import MarketImplied, evaluate_soros, compute_soros_adjustments
 
@@ -257,9 +258,39 @@ def main():
         ow = {t.asset_type for t in chain.active_tilts if t.direction == "overweight"}
         uw = {t.asset_type for t in chain.active_tilts if t.direction == "underweight"}
 
-        # 索罗斯调整: 需要真实 FRED 数据才可靠。近似数据噪音太大,暂不翻转。
-        # TODO: 接入真实 FRED breakeven/credit spread 后启用
-        # if soros_adj: ...
+        # 索罗斯调整（使用真实 FRED 数据）
+        real_mi = MARKET_IMPLIED_REAL.get(year, {})
+        if real_mi:
+            real_market = MarketImplied(
+                breakeven_5y=real_mi.get("breakeven_5y"),
+                credit_spread_hy=real_mi.get("credit_spread_hy"),
+                vix=real_mi.get("vix"),
+                vix_term_structure=(
+                    -0.3 if real_mi.get("vix_slope", 0) > 3
+                    else 0.3 if real_mi.get("vix_slope", 0) < -2
+                    else 0.0
+                ),
+                implied_rate_12m=(
+                    macro.fed_funds_rate + real_mi.get("implied_rate_change", 0)
+                    if macro.fed_funds_rate is not None else None
+                ),
+            )
+            soros_real = evaluate_soros(dalio_result, real_market, current_rate=macro.fed_funds_rate)
+            soros_adj_real = compute_soros_adjustments(soros_real)
+
+            # 保守翻转：只在极端偏差 + 达利欧也不看好时才翻转
+            # 避免在"企业好+通胀高"（2021型）时误杀 equity
+            corp_healthy = any(
+                t.asset_type == "equity_cyclical" and t.direction == "overweight" and t.magnitude > 0.3
+                for t in chain.active_tilts
+            )
+            for asset, adj in soros_adj_real.items():
+                if adj < -0.2 and asset in ow:
+                    # 如果达利欧引擎强烈看好此资产，索罗斯不翻转
+                    if asset == "equity_cyclical" and corp_healthy:
+                        continue  # 企业健康时不翻转股票
+                    ow.discard(asset)
+                    uw.add(asset)
 
         quadrant = chain.regime.quadrant if chain.regime else "N/A"
 
