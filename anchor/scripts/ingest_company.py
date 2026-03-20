@@ -70,7 +70,11 @@ async def ingest_company(ticker: str, forms: list[str] | None = None):
 
         # 确定报告期间（修复：用 period_of_report 而非 filing_date）
         period_date = getattr(latest, "period_of_report", None) or latest.filing_date
-        period = f"FY{period_date.year}"
+        # period_of_report 可能返回 str（如 "2024-09-28"）
+        if isinstance(period_date, str):
+            period = f"FY{period_date[:4]}"
+        else:
+            period = f"FY{period_date.year}"
 
         # 提取
         t0 = time.time()

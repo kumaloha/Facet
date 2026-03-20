@@ -38,6 +38,8 @@ dependencies = [
     # Financial data
     "yfinance>=0.2.40",
     "akshare>=1.14.0",
+    # SEC EDGAR
+    "edgartools>=3.0.0",
     # Macro data sources
     "fredapi>=0.5.1",
     "pandas>=2.0.0",

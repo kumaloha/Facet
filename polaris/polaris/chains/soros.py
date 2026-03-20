@@ -544,6 +544,47 @@ def evaluate_soros(
 # ══════════════════════════════════════════════════════════════
 
 
+def compute_complacency_signal(market: MarketImplied) -> dict[str, float]:
+    """纯市场信号检测（不依赖 breakeven/credit spread）。
+
+    用 VIX 水平 + VIX 期限结构判断市场自满/恐慌程度。
+    这两个数据从 yfinance 直接获取，不需要 FRED。
+
+    自满(VIX低+contango) → 风险资产被高估 → 减分
+    恐慌(VIX高+backwardation) → 风险资产被低估 → 加分
+    """
+    adjustments: dict[str, float] = {}
+
+    if market.vix is None:
+        return adjustments
+
+    vix = market.vix
+    vix_ts = market.vix_term_structure  # 正=contango(平静), 负=backwardation(恐慌)
+
+    # ── 极度自满: VIX < 14 + contango ──
+    # 市场没有为风险定价 → 所有风险资产被高估
+    if vix < 14 and (vix_ts is None or vix_ts > 0.2):
+        strength = (14 - vix) / 10  # VIX=10 → strength=0.4
+        adjustments["equity_cyclical"] = -strength * 0.5
+        adjustments["commodity"] = -strength * 0.3
+        adjustments["gold"] = strength * 0.3  # 自满时黄金被低估
+        adjustments["cash"] = strength * 0.3
+
+    # ── 极度恐慌: VIX > 30 + backwardation ──
+    # 市场过度恐慌 → 风险资产被低估
+    elif vix > 30 and (vix_ts is not None and vix_ts < -0.1):
+        strength = min((vix - 30) / 20, 0.5)  # VIX=50 → strength=0.5
+        adjustments["equity_cyclical"] = strength * 0.4
+        adjustments["gold"] = strength * 0.3  # 恐慌时黄金仍有价值
+        adjustments["nominal_bond"] = strength * 0.2
+        adjustments["commodity"] = -strength * 0.2  # 恐慌=需求崩溃=大宗差
+
+    # ── 中间状态: VIX 20-30 ──
+    # 不做调整——不确定性本身是合理定价
+
+    return adjustments
+
+
 def compute_soros_adjustments(result: SorosChainResult) -> dict[str, float]:
     """把索罗斯偏差转化为资产排名调整分数。
 

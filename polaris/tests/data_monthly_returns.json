@@ -1,0 +1,1934 @@
+{
+  "2007-01": {
+    "equity": 2.07,
+    "long_term_bond": -0.29,
+    "intermediate_bond": 0.24,
+    "commodity": -0.05,
+    "gold": 2.56,
+    "tips": 0.23
+  },
+  "2007-02": {
+    "equity": -1.96,
+    "long_term_bond": 2.96,
+    "intermediate_bond": 1.68,
+    "commodity": 5.13,
+    "gold": 2.55,
+    "tips": 1.99
+  },
+  "2007-03": {
+    "equity": 0.76,
+    "long_term_bond": -1.67,
+    "intermediate_bond": -0.1,
+    "commodity": 0.63,
+    "gold": -1.11,
+    "tips": 0.05
+  },
+  "2007-04": {
+    "equity": 4.84,
+    "long_term_bond": 0.92,
+    "intermediate_bond": 0.54,
+    "commodity": 0.78,
+    "gold": 2.05,
+    "tips": 0.57
+  },
+  "2007-05": {
+    "equity": 3.39,
+    "long_term_bond": -2.31,
+    "intermediate_bond": -1.37,
+    "commodity": -0.24,
+    "gold": -2.31,
+    "tips": -1.32
+  },
+  "2007-06": {
+    "equity": -1.89,
+    "long_term_bond": -1.04,
+    "intermediate_bond": -0.49,
+    "commodity": 0.72,
+    "gold": -1.94,
+    "tips": -0.3
+  },
+  "2007-07": {
+    "equity": -2.71,
+    "long_term_bond": 3.33,
+    "intermediate_bond": 2.27,
+    "commodity": 1.92,
+    "gold": 2.37,
+    "tips": 2.32
+  },
+  "2007-08": {
+    "equity": 1.29,
+    "long_term_bond": 1.76,
+    "intermediate_bond": 2.25,
+    "commodity": -1.88,
+    "gold": 1.11,
+    "tips": 0.82
+  },
+  "2007-09": {
+    "equity": 3.38,
+    "long_term_bond": 0.22,
+    "intermediate_bond": 0.09,
+    "commodity": 9.39,
+    "gold": 10.51,
+    "tips": 1.28
+  },
+  "2007-10": {
+    "equity": 1.83,
+    "long_term_bond": 1.83,
+    "intermediate_bond": 1.09,
+    "commodity": 8.5,
+    "gold": 6.95,
+    "tips": 1.2
+  },
+  "2007-11": {
+    "equity": -3.87,
+    "long_term_bond": 5.31,
+    "intermediate_bond": 4.08,
+    "commodity": -0.61,
+    "gold": -1.65,
+    "tips": 4.22
+  },
+  "2007-12": {
+    "equity": -1.65,
+    "long_term_bond": -0.98,
+    "intermediate_bond": -0.3,
+    "commodity": 4.1,
+    "gold": 6.65,
+    "tips": -0.52
+  },
+  "2008-01": {
+    "equity": -5.55,
+    "long_term_bond": 2.9,
+    "intermediate_bond": 4.09,
+    "commodity": 5.46,
+    "gold": 10.84,
+    "tips": 4.51,
+    "em_bond": 1.1
+  },
+  "2008-02": {
+    "equity": -2.58,
+    "long_term_bond": -0.8,
+    "intermediate_bond": 0.91,
+    "commodity": 11.17,
+    "gold": 5.23,
+    "tips": 0.9,
+    "em_bond": -0.85
+  },
+  "2008-03": {
+    "equity": -1.38,
+    "long_term_bond": 2.13,
+    "intermediate_bond": 1.35,
+    "commodity": -0.93,
+    "gold": -6.0,
+    "tips": -0.09,
+    "em_bond": 0.12
+  },
+  "2008-04": {
+    "equity": 5.28,
+    "long_term_bond": -2.55,
+    "intermediate_bond": -2.46,
+    "commodity": 6.05,
+    "gold": -4.16,
+    "tips": -2.08,
+    "em_bond": 1.14
+  },
+  "2008-05": {
+    "equity": 1.52,
+    "long_term_bond": -2.62,
+    "intermediate_bond": -1.75,
+    "commodity": 6.91,
+    "gold": 0.92,
+    "tips": 0.86,
+    "em_bond": 0.12
+  },
+  "2008-06": {
+    "equity": -8.82,
+    "long_term_bond": 2.65,
+    "intermediate_bond": 1.11,
+    "commodity": 10.43,
+    "gold": 4.52,
+    "tips": 1.42,
+    "em_bond": -2.0
+  },
+  "2008-07": {
+    "equity": -0.4,
+    "long_term_bond": -0.37,
+    "intermediate_bond": 0.75,
+    "commodity": -9.77,
+    "gold": -1.44,
+    "tips": -0.51,
+    "em_bond": 0.86
+  },
+  "2008-08": {
+    "equity": 1.55,
+    "long_term_bond": 2.74,
+    "intermediate_bond": 1.5,
+    "commodity": -6.54,
+    "gold": -9.29,
+    "tips": 0.57,
+    "em_bond": 0.67
+  },
+  "2008-09": {
+    "equity": -9.94,
+    "long_term_bond": 1.48,
+    "intermediate_bond": -0.12,
+    "commodity": -10.24,
+    "gold": 4.11,
+    "tips": -3.91,
+    "em_bond": -7.17
+  },
+  "2008-10": {
+    "equity": -16.03,
+    "long_term_bond": -1.81,
+    "intermediate_bond": -0.89,
+    "commodity": -25.1,
+    "gold": -16.14,
+    "tips": -8.11,
+    "em_bond": -19.4
+  },
+  "2008-11": {
+    "equity": -6.96,
+    "long_term_bond": 14.24,
+    "intermediate_bond": 7.73,
+    "commodity": -12.35,
+    "gold": 12.57,
+    "tips": 1.67,
+    "em_bond": 9.4
+  },
+  "2008-12": {
+    "equity": 0.17,
+    "long_term_bond": 13.35,
+    "intermediate_bond": 4.8,
+    "commodity": -4.75,
+    "gold": 7.73,
+    "tips": 6.5,
+    "em_bond": 17.21
+  },
+  "2009-01": {
+    "equity": -7.46,
+    "long_term_bond": -12.49,
+    "intermediate_bond": -3.21,
+    "commodity": -2.95,
+    "gold": 5.54,
+    "tips": -0.03,
+    "em_bond": -6.0
+  },
+  "2009-02": {
+    "equity": -10.75,
+    "long_term_bond": -1.8,
+    "intermediate_bond": -1.01,
+    "commodity": -5.61,
+    "gold": 1.45,
+    "tips": -2.2,
+    "em_bond": -6.12
+  },
+  "2009-03": {
+    "equity": 7.56,
+    "long_term_bond": 4.04,
+    "intermediate_bond": 3.34,
+    "commodity": 4.64,
+    "gold": -2.54,
+    "tips": 5.91,
+    "em_bond": 5.07
+  },
+  "2009-04": {
+    "equity": 10.72,
+    "long_term_bond": -6.96,
+    "intermediate_bond": -2.77,
+    "commodity": -0.12,
+    "gold": -3.33,
+    "tips": -2.25,
+    "em_bond": 7.69
+  },
+  "2009-05": {
+    "equity": 5.86,
+    "long_term_bond": -3.71,
+    "intermediate_bond": -2.09,
+    "commodity": 16.28,
+    "gold": 10.23,
+    "tips": 1.83,
+    "em_bond": 2.88
+  },
+  "2009-06": {
+    "equity": -0.63,
+    "long_term_bond": 0.73,
+    "intermediate_bond": -0.57,
+    "commodity": -2.65,
+    "gold": -5.22,
+    "tips": 0.46,
+    "em_bond": 1.08
+  },
+  "2009-07": {
+    "equity": 8.07,
+    "long_term_bond": 0.57,
+    "intermediate_bond": 0.86,
+    "commodity": 1.88,
+    "gold": 2.38,
+    "tips": 0.08,
+    "em_bond": 3.13
+  },
+  "2009-08": {
+    "equity": 3.69,
+    "long_term_bond": 2.22,
+    "intermediate_bond": 0.74,
+    "commodity": -4.06,
+    "gold": 0.05,
+    "tips": 0.79,
+    "em_bond": 2.48
+  },
+  "2009-09": {
+    "equity": 3.05,
+    "long_term_bond": 2.47,
+    "intermediate_bond": 1.13,
+    "commodity": -0.21,
+    "gold": 5.84,
+    "tips": 1.54,
+    "em_bond": 5.18
+  },
+  "2009-10": {
+    "equity": -1.45,
+    "long_term_bond": -2.61,
+    "intermediate_bond": -0.13,
+    "commodity": 6.92,
+    "gold": 3.72,
+    "tips": 2.02,
+    "em_bond": -0.47
+  },
+  "2009-11": {
+    "equity": 6.16,
+    "long_term_bond": 1.21,
+    "intermediate_bond": 1.44,
+    "commodity": 4.56,
+    "gold": 12.79,
+    "tips": 2.52,
+    "em_bond": 0.79
+  },
+  "2009-12": {
+    "equity": 1.37,
+    "long_term_bond": -6.68,
+    "intermediate_bond": -3.99,
+    "commodity": -0.19,
+    "gold": -7.2,
+    "tips": -2.18,
+    "em_bond": -0.15
+  },
+  "2010-01": {
+    "equity": -3.11,
+    "long_term_bond": 3.39,
+    "intermediate_bond": 2.79,
+    "commodity": -7.83,
+    "gold": -1.26,
+    "tips": 1.96,
+    "em_bond": 0.28
+  },
+  "2010-02": {
+    "equity": 3.12,
+    "long_term_bond": -0.69,
+    "intermediate_bond": 0.0,
+    "commodity": 4.17,
+    "gold": 3.27,
+    "tips": -1.49,
+    "em_bond": 0.85
+  },
+  "2010-03": {
+    "equity": 5.66,
+    "long_term_bond": -2.03,
+    "intermediate_bond": -1.0,
+    "commodity": -0.5,
+    "gold": -0.44,
+    "tips": 0.19,
+    "em_bond": 2.61
+  },
+  "2010-04": {
+    "equity": 1.97,
+    "long_term_bond": 3.26,
+    "intermediate_bond": 1.63,
+    "commodity": 3.92,
+    "gold": 5.88,
+    "tips": 2.08,
+    "em_bond": 0.53
+  },
+  "2010-05": {
+    "equity": -7.95,
+    "long_term_bond": 5.14,
+    "intermediate_bond": 2.92,
+    "commodity": -10.12,
+    "gold": 3.05,
+    "tips": 0.47,
+    "em_bond": -1.81
+  },
+  "2010-06": {
+    "equity": -5.62,
+    "long_term_bond": 5.82,
+    "intermediate_bond": 3.07,
+    "commodity": -1.78,
+    "gold": 2.36,
+    "tips": 0.93,
+    "em_bond": 2.41
+  },
+  "2010-07": {
+    "equity": 7.34,
+    "long_term_bond": -0.93,
+    "intermediate_bond": 0.93,
+    "commodity": 6.09,
+    "gold": -5.09,
+    "tips": 0.0,
+    "em_bond": 4.06
+  },
+  "2010-08": {
+    "equity": -4.5,
+    "long_term_bond": 8.37,
+    "intermediate_bond": 3.36,
+    "commodity": -3.0,
+    "gold": 5.71,
+    "tips": 2.03,
+    "em_bond": 2.63
+  },
+  "2010-09": {
+    "equity": 8.38,
+    "long_term_bond": -2.49,
+    "intermediate_bond": 0.0,
+    "commodity": 8.58,
+    "gold": 4.78,
+    "tips": 0.93,
+    "em_bond": 1.6
+  },
+  "2010-10": {
+    "equity": 4.38,
+    "long_term_bond": -4.54,
+    "intermediate_bond": 0.01,
+    "commodity": 4.47,
+    "gold": 3.68,
+    "tips": 2.38,
+    "em_bond": 1.96
+  },
+  "2010-11": {
+    "equity": 0.0,
+    "long_term_bond": -1.64,
+    "intermediate_bond": -0.91,
+    "commodity": -0.42,
+    "gold": 2.11,
+    "tips": -1.8,
+    "em_bond": -4.42
+  },
+  "2010-12": {
+    "equity": 6.13,
+    "long_term_bond": -4.05,
+    "intermediate_bond": -3.7,
+    "commodity": 9.86,
+    "gold": 2.44,
+    "tips": -1.56,
+    "em_bond": -0.1
+  },
+  "2011-01": {
+    "equity": 2.86,
+    "long_term_bond": -2.41,
+    "intermediate_bond": 0.49,
+    "commodity": 3.56,
+    "gold": -6.38,
+    "tips": 0.42,
+    "em_bond": -0.19
+  },
+  "2011-02": {
+    "equity": 3.47,
+    "long_term_bond": 1.29,
+    "intermediate_bond": -0.46,
+    "commodity": 4.19,
+    "gold": 6.0,
+    "tips": 0.57,
+    "em_bond": -0.48
+  },
+  "2011-03": {
+    "equity": -0.42,
+    "long_term_bond": 0.07,
+    "intermediate_bond": -0.13,
+    "commodity": 2.63,
+    "gold": 1.6,
+    "tips": 1.08,
+    "em_bond": 1.55
+  },
+  "2011-04": {
+    "equity": 3.34,
+    "long_term_bond": 2.23,
+    "intermediate_bond": 1.82,
+    "commodity": 4.58,
+    "gold": 8.94,
+    "tips": 2.09,
+    "em_bond": 1.71
+  },
+  "2011-05": {
+    "equity": -1.12,
+    "long_term_bond": 3.42,
+    "intermediate_bond": 2.51,
+    "commodity": -5.19,
+    "gold": -1.79,
+    "tips": 0.28,
+    "em_bond": 1.46
+  },
+  "2011-06": {
+    "equity": -2.17,
+    "long_term_bond": -2.27,
+    "intermediate_bond": -0.5,
+    "commodity": -4.26,
+    "gold": -2.43,
+    "tips": 0.33,
+    "em_bond": 0.61
+  },
+  "2011-07": {
+    "equity": -1.52,
+    "long_term_bond": 4.44,
+    "intermediate_bond": 3.18,
+    "commodity": 4.58,
+    "gold": 8.42,
+    "tips": 4.18,
+    "em_bond": 1.98
+  },
+  "2011-08": {
+    "equity": -5.5,
+    "long_term_bond": 9.68,
+    "intermediate_bond": 4.64,
+    "commodity": -0.39,
+    "gold": 12.27,
+    "tips": 0.81,
+    "em_bond": 0.56
+  },
+  "2011-09": {
+    "equity": -7.42,
+    "long_term_bond": 13.24,
+    "intermediate_bond": 2.26,
+    "commodity": -14.63,
+    "gold": -11.06,
+    "tips": 0.5,
+    "em_bond": -4.81
+  },
+  "2011-10": {
+    "equity": 11.48,
+    "long_term_bond": -3.78,
+    "intermediate_bond": -1.26,
+    "commodity": 7.67,
+    "gold": 5.87,
+    "tips": 1.93,
+    "em_bond": 5.13
+  },
+  "2011-11": {
+    "equity": -0.4,
+    "long_term_bond": 1.98,
+    "intermediate_bond": 0.58,
+    "commodity": -0.3,
+    "gold": 1.67,
+    "tips": 0.36,
+    "em_bond": -1.27
+  },
+  "2011-12": {
+    "equity": 0.4,
+    "long_term_bond": 3.13,
+    "intermediate_bond": 1.8,
+    "commodity": -2.91,
+    "gold": -10.66,
+    "tips": 0.28,
+    "em_bond": 1.52
+  },
+  "2012-01": {
+    "equity": 5.31,
+    "long_term_bond": 0.23,
+    "intermediate_bond": 1.25,
+    "commodity": 3.7,
+    "gold": 11.4,
+    "tips": 2.49,
+    "em_bond": 1.94
+  },
+  "2012-02": {
+    "equity": 4.34,
+    "long_term_bond": -2.82,
+    "intermediate_bond": -1.28,
+    "commodity": 5.35,
+    "gold": -2.96,
+    "tips": -0.58,
+    "em_bond": 2.06
+  },
+  "2012-03": {
+    "equity": 2.77,
+    "long_term_bond": -4.24,
+    "intermediate_bond": -1.57,
+    "commodity": -1.77,
+    "gold": -1.32,
+    "tips": -0.86,
+    "em_bond": -0.12
+  },
+  "2012-04": {
+    "equity": -0.24,
+    "long_term_bond": 4.8,
+    "intermediate_bond": 2.49,
+    "commodity": -1.36,
+    "gold": -0.15,
+    "tips": 1.51,
+    "em_bond": 1.78
+  },
+  "2012-05": {
+    "equity": -6.01,
+    "long_term_bond": 9.05,
+    "intermediate_bond": 2.89,
+    "commodity": -11.16,
+    "gold": -6.34,
+    "tips": 1.85,
+    "em_bond": -2.75
+  },
+  "2012-06": {
+    "equity": 3.53,
+    "long_term_bond": -1.65,
+    "intermediate_bond": -0.42,
+    "commodity": 2.01,
+    "gold": 2.35,
+    "tips": -0.97,
+    "em_bond": 4.04
+  },
+  "2012-07": {
+    "equity": 1.7,
+    "long_term_bond": 3.82,
+    "intermediate_bond": 1.42,
+    "commodity": 5.83,
+    "gold": 0.84,
+    "tips": 2.13,
+    "em_bond": 3.75
+  },
+  "2012-08": {
+    "equity": 2.5,
+    "long_term_bond": -1.32,
+    "intermediate_bond": -0.12,
+    "commodity": 5.64,
+    "gold": 4.94,
+    "tips": 0.05,
+    "em_bond": 1.25
+  },
+  "2012-09": {
+    "equity": 1.99,
+    "long_term_bond": -2.53,
+    "intermediate_bond": -0.33,
+    "commodity": -0.37,
+    "gold": 4.67,
+    "tips": 0.51,
+    "em_bond": 1.81
+  },
+  "2012-10": {
+    "equity": -1.3,
+    "long_term_bond": -0.48,
+    "intermediate_bond": -0.39,
+    "commodity": -3.92,
+    "gold": -2.94,
+    "tips": 0.62,
+    "em_bond": 0.65
+  },
+  "2012-11": {
+    "equity": 0.57,
+    "long_term_bond": 1.37,
+    "intermediate_bond": 0.98,
+    "commodity": 1.97,
+    "gold": -0.47,
+    "tips": 0.33,
+    "em_bond": 1.22
+  },
+  "2012-12": {
+    "equity": 0.18,
+    "long_term_bond": -2.89,
+    "intermediate_bond": -1.08,
+    "commodity": -1.14,
+    "gold": -2.43,
+    "tips": -0.99,
+    "em_bond": 0.08
+  },
+  "2013-01": {
+    "equity": 5.87,
+    "long_term_bond": -2.78,
+    "intermediate_bond": -1.03,
+    "commodity": 2.47,
+    "gold": -0.51,
+    "tips": -0.12,
+    "em_bond": -2.23
+  },
+  "2013-02": {
+    "equity": 1.27,
+    "long_term_bond": 1.02,
+    "intermediate_bond": 1.0,
+    "commodity": -4.69,
+    "gold": -5.09,
+    "tips": 0.19,
+    "em_bond": -0.09
+  },
+  "2013-03": {
+    "equity": 3.34,
+    "long_term_bond": -0.41,
+    "intermediate_bond": 0.3,
+    "commodity": 0.65,
+    "gold": 0.95,
+    "tips": 0.22,
+    "em_bond": -0.94
+  },
+  "2013-04": {
+    "equity": 2.37,
+    "long_term_bond": 4.68,
+    "intermediate_bond": 1.52,
+    "commodity": -3.81,
+    "gold": -7.56,
+    "tips": 0.72,
+    "em_bond": 3.58
+  },
+  "2013-05": {
+    "equity": 2.36,
+    "long_term_bond": -6.76,
+    "intermediate_bond": -3.1,
+    "commodity": -1.58,
+    "gold": -6.2,
+    "tips": -4.36,
+    "em_bond": -4.92
+  },
+  "2013-06": {
+    "equity": -1.85,
+    "long_term_bond": -3.29,
+    "intermediate_bond": -2.56,
+    "commodity": -2.79,
+    "gold": -11.06,
+    "tips": -3.8,
+    "em_bond": -4.46
+  },
+  "2013-07": {
+    "equity": 5.73,
+    "long_term_bond": -2.26,
+    "intermediate_bond": -0.35,
+    "commodity": 3.15,
+    "gold": 7.43,
+    "tips": 1.02,
+    "em_bond": 0.1
+  },
+  "2013-08": {
+    "equity": -3.0,
+    "long_term_bond": -1.36,
+    "intermediate_bond": -1.42,
+    "commodity": 2.83,
+    "gold": 5.2,
+    "tips": -1.76,
+    "em_bond": -2.43
+  },
+  "2013-09": {
+    "equity": 2.66,
+    "long_term_bond": 0.64,
+    "intermediate_bond": 1.84,
+    "commodity": -3.37,
+    "gold": -4.78,
+    "tips": 1.72,
+    "em_bond": 3.13
+  },
+  "2013-10": {
+    "equity": 5.15,
+    "long_term_bond": 1.43,
+    "intermediate_bond": 0.77,
+    "commodity": -0.05,
+    "gold": -0.34,
+    "tips": 0.4,
+    "em_bond": 2.56
+  },
+  "2013-11": {
+    "equity": 2.96,
+    "long_term_bond": -2.71,
+    "intermediate_bond": -0.88,
+    "commodity": -0.92,
+    "gold": -5.51,
+    "tips": -1.12,
+    "em_bond": -2.01
+  },
+  "2013-12": {
+    "equity": 2.04,
+    "long_term_bond": -2.22,
+    "intermediate_bond": -2.26,
+    "commodity": 0.56,
+    "gold": -3.79,
+    "tips": -1.42,
+    "em_bond": -0.07
+  },
+  "2014-01": {
+    "equity": -3.0,
+    "long_term_bond": 6.97,
+    "intermediate_bond": 3.4,
+    "commodity": -3.04,
+    "gold": 3.42,
+    "tips": 2.19,
+    "em_bond": -0.07
+  },
+  "2014-02": {
+    "equity": 4.55,
+    "long_term_bond": 0.27,
+    "intermediate_bond": 0.18,
+    "commodity": 5.04,
+    "gold": 6.27,
+    "tips": 0.43,
+    "em_bond": 3.04
+  },
+  "2014-03": {
+    "equity": 0.39,
+    "long_term_bond": 0.74,
+    "intermediate_bond": -0.55,
+    "commodity": -0.05,
+    "gold": -3.14,
+    "tips": -0.53,
+    "em_bond": 1.19
+  },
+  "2014-04": {
+    "equity": 1.14,
+    "long_term_bond": 2.08,
+    "intermediate_bond": 0.73,
+    "commodity": 1.13,
+    "gold": 0.49,
+    "tips": 1.32,
+    "em_bond": 1.07
+  },
+  "2014-05": {
+    "equity": 2.32,
+    "long_term_bond": 2.97,
+    "intermediate_bond": 1.83,
+    "commodity": -1.43,
+    "gold": -3.05,
+    "tips": 1.77,
+    "em_bond": 3.48
+  },
+  "2014-06": {
+    "equity": 1.58,
+    "long_term_bond": -0.27,
+    "intermediate_bond": -0.2,
+    "commodity": 2.09,
+    "gold": 6.32,
+    "tips": 0.02,
+    "em_bond": 0.06
+  },
+  "2014-07": {
+    "equity": -0.87,
+    "long_term_bond": 0.67,
+    "intermediate_bond": -0.24,
+    "commodity": -4.72,
+    "gold": -3.63,
+    "tips": 0.19,
+    "em_bond": -0.24
+  },
+  "2014-08": {
+    "equity": 3.94,
+    "long_term_bond": 4.71,
+    "intermediate_bond": 1.88,
+    "commodity": -1.17,
+    "gold": 0.38,
+    "tips": 0.59,
+    "em_bond": 1.27
+  },
+  "2014-09": {
+    "equity": -1.84,
+    "long_term_bond": -2.08,
+    "intermediate_bond": -1.03,
+    "commodity": -7.23,
+    "gold": -6.18,
+    "tips": -2.46,
+    "em_bond": -2.06
+  },
+  "2014-10": {
+    "equity": 2.83,
+    "long_term_bond": 2.8,
+    "intermediate_bond": 1.52,
+    "commodity": -3.87,
+    "gold": -3.05,
+    "tips": 1.07,
+    "em_bond": 1.88
+  },
+  "2014-11": {
+    "equity": 2.75,
+    "long_term_bond": 2.97,
+    "intermediate_bond": 1.31,
+    "commodity": -8.53,
+    "gold": -0.49,
+    "tips": 0.17,
+    "em_bond": -0.42
+  },
+  "2014-12": {
+    "equity": -0.81,
+    "long_term_bond": 3.06,
+    "intermediate_bond": -0.02,
+    "commodity": -9.62,
+    "gold": 1.31,
+    "tips": -1.11,
+    "em_bond": -3.24
+  },
+  "2015-01": {
+    "equity": -2.43,
+    "long_term_bond": 10.3,
+    "intermediate_bond": 4.64,
+    "commodity": -5.71,
+    "gold": 8.69,
+    "tips": 3.29,
+    "em_bond": 2.79
+  },
+  "2015-02": {
+    "equity": 5.62,
+    "long_term_bond": -6.33,
+    "intermediate_bond": -2.63,
+    "commodity": 4.42,
+    "gold": -5.91,
+    "tips": -1.29,
+    "em_bond": 0.62
+  },
+  "2015-03": {
+    "equity": -2.01,
+    "long_term_bond": 1.1,
+    "intermediate_bond": 0.87,
+    "commodity": -6.05,
+    "gold": -2.15,
+    "tips": -0.48,
+    "em_bond": 0.05
+  },
+  "2015-04": {
+    "equity": 1.44,
+    "long_term_bond": -3.44,
+    "intermediate_bond": -0.65,
+    "commodity": 7.14,
+    "gold": -0.17,
+    "tips": 0.68,
+    "em_bond": 1.21
+  },
+  "2015-05": {
+    "equity": 1.28,
+    "long_term_bond": -2.37,
+    "intermediate_bond": -0.4,
+    "commodity": -3.17,
+    "gold": 0.56,
+    "tips": -1.01,
+    "em_bond": -0.33
+  },
+  "2015-06": {
+    "equity": -2.5,
+    "long_term_bond": -4.08,
+    "intermediate_bond": -1.64,
+    "commodity": 1.67,
+    "gold": -1.52,
+    "tips": -1.03,
+    "em_bond": -1.83
+  },
+  "2015-07": {
+    "equity": 2.75,
+    "long_term_bond": 4.54,
+    "intermediate_bond": 1.52,
+    "commodity": -12.61,
+    "gold": -6.62,
+    "tips": 0.54,
+    "em_bond": 0.14
+  },
+  "2015-08": {
+    "equity": -6.09,
+    "long_term_bond": -0.69,
+    "intermediate_bond": 0.08,
+    "commodity": -0.3,
+    "gold": 3.71,
+    "tips": -0.95,
+    "em_bond": -1.13
+  },
+  "2015-09": {
+    "equity": -3.05,
+    "long_term_bond": 1.97,
+    "intermediate_bond": 1.57,
+    "commodity": -3.39,
+    "gold": -1.8,
+    "tips": -0.8,
+    "em_bond": -1.11
+  },
+  "2015-10": {
+    "equity": 9.07,
+    "long_term_bond": -0.4,
+    "intermediate_bond": -0.63,
+    "commodity": 0.31,
+    "gold": 2.28,
+    "tips": 0.53,
+    "em_bond": 2.4
+  },
+  "2015-11": {
+    "equity": 0.37,
+    "long_term_bond": -0.88,
+    "intermediate_bond": -0.42,
+    "commodity": -6.61,
+    "gold": -6.75,
+    "tips": -0.1,
+    "em_bond": 0.35
+  },
+  "2015-12": {
+    "equity": -2.31,
+    "long_term_bond": -0.5,
+    "intermediate_bond": -0.6,
+    "commodity": -5.83,
+    "gold": -0.45,
+    "tips": -1.01,
+    "em_bond": -2.02
+  },
+  "2016-01": {
+    "equity": -4.41,
+    "long_term_bond": 6.02,
+    "intermediate_bond": 3.66,
+    "commodity": -4.42,
+    "gold": 5.41,
+    "tips": 1.56,
+    "em_bond": 0.96
+  },
+  "2016-02": {
+    "equity": -0.09,
+    "long_term_bond": 2.89,
+    "intermediate_bond": 1.33,
+    "commodity": -0.19,
+    "gold": 10.93,
+    "tips": 1.23,
+    "em_bond": 1.35
+  },
+  "2016-03": {
+    "equity": 6.18,
+    "long_term_bond": -0.09,
+    "intermediate_bond": -0.06,
+    "commodity": 4.27,
+    "gold": -0.84,
+    "tips": 1.66,
+    "em_bond": 3.3
+  },
+  "2016-04": {
+    "equity": 0.91,
+    "long_term_bond": -0.76,
+    "intermediate_bond": -0.17,
+    "commodity": 9.7,
+    "gold": 5.11,
+    "tips": 0.21,
+    "em_bond": 1.57
+  },
+  "2016-05": {
+    "equity": 1.7,
+    "long_term_bond": 0.81,
+    "intermediate_bond": -0.09,
+    "commodity": 0.89,
+    "gold": -6.14,
+    "tips": -0.64,
+    "em_bond": -0.19
+  },
+  "2016-06": {
+    "equity": -0.17,
+    "long_term_bond": 6.92,
+    "intermediate_bond": 3.08,
+    "commodity": 4.34,
+    "gold": 8.97,
+    "tips": 2.21,
+    "em_bond": 4.14
+  },
+  "2016-07": {
+    "equity": 4.19,
+    "long_term_bond": 2.13,
+    "intermediate_bond": 0.25,
+    "commodity": -7.01,
+    "gold": 1.98,
+    "tips": 0.23,
+    "em_bond": 1.31
+  },
+  "2016-08": {
+    "equity": 0.12,
+    "long_term_bond": -1.02,
+    "intermediate_bond": -1.01,
+    "commodity": 0.83,
+    "gold": -3.26,
+    "tips": -0.3,
+    "em_bond": 1.36
+  },
+  "2016-09": {
+    "equity": -0.49,
+    "long_term_bond": -1.51,
+    "intermediate_bond": 0.24,
+    "commodity": 4.27,
+    "gold": 0.69,
+    "tips": 0.79,
+    "em_bond": 0.42
+  },
+  "2016-10": {
+    "equity": -1.24,
+    "long_term_bond": -4.37,
+    "intermediate_bond": -1.5,
+    "commodity": -0.32,
+    "gold": -2.94,
+    "tips": -0.18,
+    "em_bond": -1.74
+  },
+  "2016-11": {
+    "equity": 3.68,
+    "long_term_bond": -8.23,
+    "intermediate_bond": -4.23,
+    "commodity": 1.66,
+    "gold": -8.36,
+    "tips": -2.07,
+    "em_bond": -4.28
+  },
+  "2016-12": {
+    "equity": 1.43,
+    "long_term_bond": -0.73,
+    "intermediate_bond": -0.27,
+    "commodity": 4.12,
+    "gold": -1.91,
+    "tips": -0.25,
+    "em_bond": 1.23
+  },
+  "2017-01": {
+    "equity": 2.39,
+    "long_term_bond": 1.28,
+    "intermediate_bond": 0.52,
+    "commodity": -0.52,
+    "gold": 5.42,
+    "tips": 1.1,
+    "em_bond": 2.39
+  },
+  "2017-02": {
+    "equity": 3.93,
+    "long_term_bond": 1.36,
+    "intermediate_bond": 0.56,
+    "commodity": -0.23,
+    "gold": 3.18,
+    "tips": 0.41,
+    "em_bond": 1.27
+  },
+  "2017-03": {
+    "equity": -0.31,
+    "long_term_bond": -0.62,
+    "intermediate_bond": 0.1,
+    "commodity": -3.24,
+    "gold": -0.43,
+    "tips": 0.0,
+    "em_bond": 0.52
+  },
+  "2017-04": {
+    "equity": 1.43,
+    "long_term_bond": 1.54,
+    "intermediate_bond": 1.09,
+    "commodity": -2.72,
+    "gold": 1.73,
+    "tips": 0.32,
+    "em_bond": 1.72
+  },
+  "2017-05": {
+    "equity": 1.41,
+    "long_term_bond": 1.9,
+    "intermediate_bond": 0.82,
+    "commodity": -1.44,
+    "gold": -0.12,
+    "tips": -0.16,
+    "em_bond": 0.75
+  },
+  "2017-06": {
+    "equity": 0.15,
+    "long_term_bond": 0.78,
+    "intermediate_bond": -0.5,
+    "commodity": -0.89,
+    "gold": -2.16,
+    "tips": -0.84,
+    "em_bond": -0.72
+  },
+  "2017-07": {
+    "equity": 2.55,
+    "long_term_bond": -0.65,
+    "intermediate_bond": 0.38,
+    "commodity": 4.09,
+    "gold": 2.31,
+    "tips": 0.44,
+    "em_bond": 1.19
+  },
+  "2017-08": {
+    "equity": 0.29,
+    "long_term_bond": 3.4,
+    "intermediate_bond": 1.44,
+    "commodity": 0.39,
+    "gold": 4.2,
+    "tips": 1.1,
+    "em_bond": 1.98
+  },
+  "2017-09": {
+    "equity": 1.51,
+    "long_term_bond": -2.32,
+    "intermediate_bond": -1.43,
+    "commodity": 1.96,
+    "gold": -3.37,
+    "tips": -0.71,
+    "em_bond": -0.18
+  },
+  "2017-10": {
+    "equity": 2.87,
+    "long_term_bond": -0.03,
+    "intermediate_bond": -0.18,
+    "commodity": 3.99,
+    "gold": -0.75,
+    "tips": 0.4,
+    "em_bond": 0.25
+  },
+  "2017-11": {
+    "equity": 3.06,
+    "long_term_bond": 0.73,
+    "intermediate_bond": -0.29,
+    "commodity": 0.89,
+    "gold": 0.36,
+    "tips": -0.07,
+    "em_bond": -0.27
+  },
+  "2017-12": {
+    "equity": 0.7,
+    "long_term_bond": 1.61,
+    "intermediate_bond": 0.03,
+    "commodity": 2.78,
+    "gold": 2.11,
+    "tips": 0.55,
+    "em_bond": 0.92
+  },
+  "2018-01": {
+    "equity": 6.18,
+    "long_term_bond": -2.85,
+    "intermediate_bond": -1.85,
+    "commodity": 2.99,
+    "gold": 3.23,
+    "tips": -0.27,
+    "em_bond": 0.06
+  },
+  "2018-02": {
+    "equity": -3.64,
+    "long_term_bond": -3.25,
+    "intermediate_bond": -1.1,
+    "commodity": -2.97,
+    "gold": -2.08,
+    "tips": -1.06,
+    "em_bond": -2.44
+  },
+  "2018-03": {
+    "equity": -3.13,
+    "long_term_bond": 2.87,
+    "intermediate_bond": 1.16,
+    "commodity": 2.35,
+    "gold": 0.63,
+    "tips": 1.03,
+    "em_bond": 0.51
+  },
+  "2018-04": {
+    "equity": 0.92,
+    "long_term_bond": -2.1,
+    "intermediate_bond": -1.29,
+    "commodity": 3.41,
+    "gold": -0.95,
+    "tips": -0.39,
+    "em_bond": -2.08
+  },
+  "2018-05": {
+    "equity": 2.43,
+    "long_term_bond": 2.0,
+    "intermediate_bond": 0.97,
+    "commodity": 2.63,
+    "gold": -1.2,
+    "tips": 0.14,
+    "em_bond": -0.86
+  },
+  "2018-06": {
+    "equity": 0.12,
+    "long_term_bond": 0.64,
+    "intermediate_bond": 0.19,
+    "commodity": -1.9,
+    "gold": -3.61,
+    "tips": 0.8,
+    "em_bond": -1.54
+  },
+  "2018-07": {
+    "equity": 4.17,
+    "long_term_bond": -1.43,
+    "intermediate_bond": -0.52,
+    "commodity": -2.47,
+    "gold": -2.24,
+    "tips": -0.62,
+    "em_bond": 2.57
+  },
+  "2018-08": {
+    "equity": 3.19,
+    "long_term_bond": 1.32,
+    "intermediate_bond": 1.0,
+    "commodity": 0.75,
+    "gold": -2.14,
+    "tips": 0.61,
+    "em_bond": -2.31
+  },
+  "2018-09": {
+    "equity": 0.14,
+    "long_term_bond": -2.87,
+    "intermediate_bond": -1.21,
+    "commodity": 3.4,
+    "gold": -0.66,
+    "tips": -0.9,
+    "em_bond": 2.03
+  },
+  "2018-10": {
+    "equity": -6.49,
+    "long_term_bond": -2.92,
+    "intermediate_bond": -0.3,
+    "commodity": -5.6,
+    "gold": 2.12,
+    "tips": -1.26,
+    "em_bond": -2.53
+  },
+  "2018-11": {
+    "equity": 1.86,
+    "long_term_bond": 1.76,
+    "intermediate_bond": 1.31,
+    "commodity": -9.83,
+    "gold": 0.34,
+    "tips": 0.48,
+    "em_bond": -0.51
+  },
+  "2018-12": {
+    "equity": -9.33,
+    "long_term_bond": 5.62,
+    "intermediate_bond": 2.6,
+    "commodity": -5.26,
+    "gold": 4.94,
+    "tips": 0.31,
+    "em_bond": 0.66
+  },
+  "2019-01": {
+    "equity": 8.64,
+    "long_term_bond": 0.85,
+    "intermediate_bond": 1.07,
+    "commodity": 8.49,
+    "gold": 2.89,
+    "tips": 1.74,
+    "em_bond": 6.55
+  },
+  "2019-02": {
+    "equity": 3.24,
+    "long_term_bond": -1.6,
+    "intermediate_bond": -0.73,
+    "commodity": 2.86,
+    "gold": -0.61,
+    "tips": -0.18,
+    "em_bond": -0.01
+  },
+  "2019-03": {
+    "equity": 1.36,
+    "long_term_bond": 5.59,
+    "intermediate_bond": 2.67,
+    "commodity": -0.37,
+    "gold": -1.6,
+    "tips": 1.98,
+    "em_bond": 1.51
+  },
+  "2019-04": {
+    "equity": 4.55,
+    "long_term_bond": -2.0,
+    "intermediate_bond": -0.53,
+    "commodity": 1.17,
+    "gold": -0.66,
+    "tips": 0.22,
+    "em_bond": 0.16
+  },
+  "2019-05": {
+    "equity": -6.38,
+    "long_term_bond": 6.86,
+    "intermediate_bond": 3.06,
+    "commodity": -5.95,
+    "gold": 1.76,
+    "tips": 1.72,
+    "em_bond": 0.51
+  },
+  "2019-06": {
+    "equity": 6.44,
+    "long_term_bond": 0.95,
+    "intermediate_bond": 1.22,
+    "commodity": 3.94,
+    "gold": 8.0,
+    "tips": 0.22,
+    "em_bond": 3.51
+  },
+  "2019-07": {
+    "equity": 2.0,
+    "long_term_bond": 0.26,
+    "intermediate_bond": 0.06,
+    "commodity": -1.11,
+    "gold": 0.01,
+    "tips": 0.34,
+    "em_bond": 0.77
+  },
+  "2019-08": {
+    "equity": -1.67,
+    "long_term_bond": 11.05,
+    "intermediate_bond": 3.94,
+    "commodity": -4.65,
+    "gold": 7.91,
+    "tips": 2.64,
+    "em_bond": 1.57
+  },
+  "2019-09": {
+    "equity": 1.48,
+    "long_term_bond": -2.66,
+    "intermediate_bond": -1.17,
+    "commodity": 1.42,
+    "gold": -3.39,
+    "tips": -0.92,
+    "em_bond": -1.09
+  },
+  "2019-10": {
+    "equity": 2.68,
+    "long_term_bond": -1.11,
+    "intermediate_bond": 0.2,
+    "commodity": 1.94,
+    "gold": 2.56,
+    "tips": -0.15,
+    "em_bond": 0.59
+  },
+  "2019-11": {
+    "equity": 3.62,
+    "long_term_bond": -0.41,
+    "intermediate_bond": -0.68,
+    "commodity": -0.15,
+    "gold": -3.21,
+    "tips": 0.45,
+    "em_bond": -0.96
+  },
+  "2019-12": {
+    "equity": 2.4,
+    "long_term_bond": -3.35,
+    "intermediate_bond": -1.06,
+    "commodity": 4.2,
+    "gold": 3.66,
+    "tips": 0.18,
+    "em_bond": 2.55
+  },
+  "2020-01": {
+    "equity": 0.45,
+    "long_term_bond": 8.05,
+    "intermediate_bond": 3.76,
+    "commodity": -7.1,
+    "gold": 4.5,
+    "tips": 2.32,
+    "em_bond": 2.0
+  },
+  "2020-02": {
+    "equity": -7.92,
+    "long_term_bond": 6.45,
+    "intermediate_bond": 2.82,
+    "commodity": -6.7,
+    "gold": -0.64,
+    "tips": 0.81,
+    "em_bond": -1.6
+  },
+  "2020-03": {
+    "equity": -13.0,
+    "long_term_bond": 6.4,
+    "intermediate_bond": 3.74,
+    "commodity": -17.31,
+    "gold": -0.22,
+    "tips": -1.65,
+    "em_bond": -14.98
+  },
+  "2020-04": {
+    "equity": 13.36,
+    "long_term_bond": 1.22,
+    "intermediate_bond": 0.28,
+    "commodity": -3.17,
+    "gold": 7.26,
+    "tips": 2.87,
+    "em_bond": 4.33
+  },
+  "2020-05": {
+    "equity": 4.77,
+    "long_term_bond": -1.74,
+    "intermediate_bond": 0.34,
+    "commodity": 8.12,
+    "gold": 2.59,
+    "tips": 0.56,
+    "em_bond": 6.32
+  },
+  "2020-06": {
+    "equity": 1.33,
+    "long_term_bond": 0.33,
+    "intermediate_bond": 0.05,
+    "commodity": 4.49,
+    "gold": 2.74,
+    "tips": 1.23,
+    "em_bond": 3.05
+  },
+  "2020-07": {
+    "equity": 6.35,
+    "long_term_bond": 4.45,
+    "intermediate_bond": 0.86,
+    "commodity": 5.14,
+    "gold": 10.79,
+    "tips": 2.33,
+    "em_bond": 3.87
+  },
+  "2020-08": {
+    "equity": 6.98,
+    "long_term_bond": -5.05,
+    "intermediate_bond": -0.96,
+    "commodity": 4.62,
+    "gold": -0.32,
+    "tips": 0.88,
+    "em_bond": 0.73
+  },
+  "2020-09": {
+    "equity": -4.13,
+    "long_term_bond": 0.77,
+    "intermediate_bond": 0.33,
+    "commodity": -3.57,
+    "gold": -4.17,
+    "tips": -0.38,
+    "em_bond": -2.08
+  },
+  "2020-10": {
+    "equity": -2.1,
+    "long_term_bond": -3.38,
+    "intermediate_bond": -1.37,
+    "commodity": -3.08,
+    "gold": -0.52,
+    "tips": -1.0,
+    "em_bond": -0.49
+  },
+  "2020-11": {
+    "equity": 10.88,
+    "long_term_bond": 1.67,
+    "intermediate_bond": 0.33,
+    "commodity": 10.17,
+    "gold": -5.41,
+    "tips": 1.29,
+    "em_bond": 4.19
+  },
+  "2020-12": {
+    "equity": 3.27,
+    "long_term_bond": -1.33,
+    "intermediate_bond": -0.31,
+    "commodity": 5.44,
+    "gold": 7.01,
+    "tips": 1.22,
+    "em_bond": 1.82
+  },
+  "2021-01": {
+    "equity": -0.6,
+    "long_term_bond": -3.43,
+    "intermediate_bond": -0.97,
+    "commodity": 3.36,
+    "gold": -3.22,
+    "tips": 0.39,
+    "em_bond": -1.09
+  },
+  "2021-02": {
+    "equity": 2.78,
+    "long_term_bond": -5.84,
+    "intermediate_bond": -2.42,
+    "commodity": 10.14,
+    "gold": -6.26,
+    "tips": -1.69,
+    "em_bond": -3.36
+  },
+  "2021-03": {
+    "equity": 4.2,
+    "long_term_bond": -5.25,
+    "intermediate_bond": -2.38,
+    "commodity": -0.76,
+    "gold": -1.14,
+    "tips": -0.26,
+    "em_bond": -0.72
+  },
+  "2021-04": {
+    "equity": 5.64,
+    "long_term_bond": 2.48,
+    "intermediate_bond": 1.0,
+    "commodity": 7.82,
+    "gold": 3.56,
+    "tips": 1.19,
+    "em_bond": 2.4
+  },
+  "2021-05": {
+    "equity": 0.66,
+    "long_term_bond": -0.01,
+    "intermediate_bond": 0.42,
+    "commodity": 3.85,
+    "gold": 7.68,
+    "tips": 0.85,
+    "em_bond": 0.96
+  },
+  "2021-06": {
+    "equity": 1.91,
+    "long_term_bond": 4.42,
+    "intermediate_bond": 1.02,
+    "commodity": 3.52,
+    "gold": -7.15,
+    "tips": 0.6,
+    "em_bond": 0.85
+  },
+  "2021-07": {
+    "equity": 2.78,
+    "long_term_bond": 3.73,
+    "intermediate_bond": 1.99,
+    "commodity": 1.31,
+    "gold": 2.53,
+    "tips": 2.56,
+    "em_bond": 0.56
+  },
+  "2021-08": {
+    "equity": 2.98,
+    "long_term_bond": -0.33,
+    "intermediate_bond": -0.39,
+    "commodity": -1.65,
+    "gold": -0.08,
+    "tips": -0.11,
+    "em_bond": 0.91
+  },
+  "2021-09": {
+    "equity": -4.96,
+    "long_term_bond": -2.91,
+    "intermediate_bond": -1.6,
+    "commodity": 5.21,
+    "gold": -3.22,
+    "tips": -0.88,
+    "em_bond": -2.63
+  },
+  "2021-10": {
+    "equity": 7.36,
+    "long_term_bond": 2.47,
+    "intermediate_bond": -0.45,
+    "commodity": 5.81,
+    "gold": 1.48,
+    "tips": 1.47,
+    "em_bond": 0.15
+  },
+  "2021-11": {
+    "equity": -0.8,
+    "long_term_bond": 2.77,
+    "intermediate_bond": 1.08,
+    "commodity": -8.77,
+    "gold": -0.69,
+    "tips": 1.11,
+    "em_bond": -1.89
+  },
+  "2021-12": {
+    "equity": 4.26,
+    "long_term_bond": -2.12,
+    "intermediate_bond": -0.62,
+    "commodity": 6.67,
+    "gold": 3.3,
+    "tips": -0.25,
+    "em_bond": 1.81
+  },
+  "2022-01": {
+    "equity": -4.94,
+    "long_term_bond": -3.69,
+    "intermediate_bond": -1.95,
+    "commodity": 7.91,
+    "gold": -1.68,
+    "tips": -1.31,
+    "em_bond": -2.73
+  },
+  "2022-02": {
+    "equity": -2.95,
+    "long_term_bond": -1.77,
+    "intermediate_bond": -0.39,
+    "commodity": 6.46,
+    "gold": 6.12,
+    "tips": 0.51,
+    "em_bond": -5.86
+  },
+  "2022-03": {
+    "equity": 3.44,
+    "long_term_bond": -5.44,
+    "intermediate_bond": -4.06,
+    "commodity": 9.2,
+    "gold": 1.27,
+    "tips": -1.72,
+    "em_bond": -1.11
+  },
+  "2022-04": {
+    "equity": -8.49,
+    "long_term_bond": -9.44,
+    "intermediate_bond": -4.24,
+    "commodity": 5.6,
+    "gold": -2.07,
+    "tips": -2.63,
+    "em_bond": -6.7
+  },
+  "2022-05": {
+    "equity": 0.23,
+    "long_term_bond": -2.27,
+    "intermediate_bond": 0.61,
+    "commodity": 4.63,
+    "gold": -3.26,
+    "tips": -1.13,
+    "em_bond": 0.81
+  },
+  "2022-06": {
+    "equity": -8.64,
+    "long_term_bond": -1.29,
+    "intermediate_bond": -0.87,
+    "commodity": -7.5,
+    "gold": -1.57,
+    "tips": -3.48,
+    "em_bond": -6.13
+  },
+  "2022-07": {
+    "equity": 9.68,
+    "long_term_bond": 2.41,
+    "intermediate_bond": 2.93,
+    "commodity": -1.98,
+    "gold": -2.59,
+    "tips": 4.99,
+    "em_bond": 3.55
+  },
+  "2022-08": {
+    "equity": -4.08,
+    "long_term_bond": -4.54,
+    "intermediate_bond": -3.87,
+    "commodity": -1.5,
+    "gold": -2.94,
+    "tips": -3.17,
+    "em_bond": -2.69
+  },
+  "2022-09": {
+    "equity": -9.62,
+    "long_term_bond": -8.26,
+    "intermediate_bond": -4.74,
+    "commodity": -7.02,
+    "gold": -2.89,
+    "tips": -7.0,
+    "em_bond": -6.54
+  },
+  "2022-10": {
+    "equity": 8.57,
+    "long_term_bond": -5.99,
+    "intermediate_bond": -1.48,
+    "commodity": 5.05,
+    "gold": -1.78,
+    "tips": 2.71,
+    "em_bond": -0.27
+  },
+  "2022-11": {
+    "equity": 5.56,
+    "long_term_bond": 7.14,
+    "intermediate_bond": 3.6,
+    "commodity": 1.46,
+    "gold": 8.49,
+    "tips": 1.83,
+    "em_bond": 10.07
+  },
+  "2022-12": {
+    "equity": -6.19,
+    "long_term_bond": -2.86,
+    "intermediate_bond": -1.67,
+    "commodity": -3.29,
+    "gold": 2.93,
+    "tips": -1.75,
+    "em_bond": -1.66
+  },
+  "2023-01": {
+    "equity": 6.78,
+    "long_term_bond": 8.17,
+    "intermediate_bond": 4.0,
+    "commodity": 1.49,
+    "gold": 5.76,
+    "tips": 2.53,
+    "em_bond": 4.74
+  },
+  "2023-02": {
+    "equity": -2.52,
+    "long_term_bond": -5.1,
+    "intermediate_bond": -3.48,
+    "commodity": -4.46,
+    "gold": -5.37,
+    "tips": -1.36,
+    "em_bond": -3.04
+  },
+  "2023-03": {
+    "equity": 3.31,
+    "long_term_bond": 4.85,
+    "intermediate_bond": 3.73,
+    "commodity": -0.1,
+    "gold": 7.92,
+    "tips": 2.86,
+    "em_bond": 1.58
+  },
+  "2023-04": {
+    "equity": 1.99,
+    "long_term_bond": 0.34,
+    "intermediate_bond": 0.83,
+    "commodity": -0.77,
+    "gold": 0.86,
+    "tips": -0.06,
+    "em_bond": 0.3
+  },
+  "2023-05": {
+    "equity": 0.46,
+    "long_term_bond": -3.02,
+    "intermediate_bond": -1.48,
+    "commodity": -6.4,
+    "gold": -1.34,
+    "tips": -1.59,
+    "em_bond": -1.18
+  },
+  "2023-06": {
+    "equity": 6.09,
+    "long_term_bond": 0.21,
+    "intermediate_bond": -1.25,
+    "commodity": 2.95,
+    "gold": -2.22,
+    "tips": -0.11,
+    "em_bond": 2.5
+  },
+  "2023-07": {
+    "equity": 3.66,
+    "long_term_bond": -2.55,
+    "intermediate_bond": -0.65,
+    "commodity": 8.71,
+    "gold": 2.29,
+    "tips": -0.14,
+    "em_bond": 1.74
+  },
+  "2023-08": {
+    "equity": -1.63,
+    "long_term_bond": -3.15,
+    "intermediate_bond": -0.75,
+    "commodity": -0.32,
+    "gold": -1.28,
+    "tips": -0.55,
+    "em_bond": -1.84
+  },
+  "2023-09": {
+    "equity": -5.08,
+    "long_term_bond": -7.97,
+    "intermediate_bond": -3.13,
+    "commodity": 1.49,
+    "gold": -4.76,
+    "tips": -2.01,
+    "em_bond": -3.35
+  },
+  "2023-10": {
+    "equity": -1.83,
+    "long_term_bond": -5.48,
+    "intermediate_bond": -1.94,
+    "commodity": -1.78,
+    "gold": 7.37,
+    "tips": -0.59,
+    "em_bond": -1.19
+  },
+  "2023-11": {
+    "equity": 9.13,
+    "long_term_bond": 9.9,
+    "intermediate_bond": 4.53,
+    "commodity": -2.47,
+    "gold": 2.53,
+    "tips": 2.5,
+    "em_bond": 6.22
+  },
+  "2023-12": {
+    "equity": 4.14,
+    "long_term_bond": 8.36,
+    "intermediate_bond": 3.48,
+    "commodity": -7.84,
+    "gold": 1.28,
+    "tips": 2.64,
+    "em_bond": 4.18
+  },
+  "2024-01": {
+    "equity": 2.0,
+    "long_term_bond": -1.62,
+    "intermediate_bond": 0.63,
+    "commodity": 6.32,
+    "gold": -1.42,
+    "tips": 0.57,
+    "em_bond": -0.42
+  },
+  "2024-02": {
+    "equity": 5.22,
+    "long_term_bond": -2.57,
+    "intermediate_bond": -2.31,
+    "commodity": -1.51,
+    "gold": 0.46,
+    "tips": -1.04,
+    "em_bond": 0.37
+  },
+  "2024-03": {
+    "equity": 2.95,
+    "long_term_bond": 0.79,
+    "intermediate_bond": 0.71,
+    "commodity": 4.46,
+    "gold": 8.67,
+    "tips": 0.65,
+    "em_bond": 1.97
+  },
+  "2024-04": {
+    "equity": -3.73,
+    "long_term_bond": -6.47,
+    "intermediate_bond": -3.16,
+    "commodity": 1.61,
+    "gold": 2.99,
+    "tips": -1.75,
+    "em_bond": -2.38
+  },
+  "2024-05": {
+    "equity": 5.06,
+    "long_term_bond": 2.87,
+    "intermediate_bond": 1.79,
+    "commodity": -0.33,
+    "gold": 1.62,
+    "tips": 1.17,
+    "em_bond": 2.6
+  },
+  "2024-06": {
+    "equity": 3.19,
+    "long_term_bond": 1.82,
+    "intermediate_bond": 1.22,
+    "commodity": -0.19,
+    "gold": -0.13,
+    "tips": 0.74,
+    "em_bond": -0.24
+  },
+  "2024-07": {
+    "equity": 1.54,
+    "long_term_bond": 3.65,
+    "intermediate_bond": 2.89,
+    "commodity": -2.77,
+    "gold": 5.37,
+    "tips": 2.0,
+    "em_bond": 2.65
+  },
+  "2024-08": {
+    "equity": 2.34,
+    "long_term_bond": 2.1,
+    "intermediate_bond": 1.36,
+    "commodity": -2.07,
+    "gold": 2.09,
+    "tips": 1.05,
+    "em_bond": 2.26
+  },
+  "2024-09": {
+    "equity": 1.79,
+    "long_term_bond": 2.0,
+    "intermediate_bond": 1.38,
+    "commodity": 0.69,
+    "gold": 5.09,
+    "tips": 1.63,
+    "em_bond": 2.05
+  },
+  "2024-10": {
+    "equity": -0.59,
+    "long_term_bond": -5.45,
+    "intermediate_bond": -3.39,
+    "commodity": 1.47,
+    "gold": 4.3,
+    "tips": -1.92,
+    "em_bond": -2.45
+  },
+  "2024-11": {
+    "equity": 5.96,
+    "long_term_bond": 1.97,
+    "intermediate_bond": 1.01,
+    "commodity": -2.02,
+    "gold": -3.12,
+    "tips": 0.53,
+    "em_bond": 1.78
+  },
+  "2024-12": {
+    "equity": -2.73,
+    "long_term_bond": -6.74,
+    "intermediate_bond": -2.58,
+    "commodity": -3.39,
+    "gold": -1.41,
+    "tips": -1.96,
+    "em_bond": -2.93
+  }
+}
