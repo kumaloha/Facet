@@ -248,13 +248,16 @@ def assess_force2_internal_order(data: dict | None = None) -> ForceAssessment:
     d = data or {}
 
     # ── 可量化指标 ──
-    # 收入不平等 (FRED: GINIALLRH)
+    # 收入不平等 (FRED: SIPOVGINIUSA, 0-100制)
     gini = d.get("gini_coefficient")
     if gini is not None:
-        trend = "deteriorating" if gini > 0.40 else "stable"
+        # FRED 用 0-100 制 (如41.1), 统一处理
+        if gini < 1:
+            gini = gini * 100  # 兼容 0-1 制输入
+        trend = "deteriorating" if gini > 40 else "stable"
         f.indicators.append(Indicator(
-            name="基尼系数", value=gini, trend=trend,
-            context="美国~0.49(高), 北欧~0.27(低). >0.40进入不稳定区间"))
+            name="基尼系数", value=round(gini, 1), trend=trend,
+            context="FRED 0-100制. 美国~41(高), 北欧~27(低). >40进入不稳定区间"))
 
     # 实际工资增速 vs 生产率增速（差距=分配不公）
     wage_gap = d.get("wage_productivity_gap")
@@ -280,8 +283,8 @@ def assess_force2_internal_order(data: dict | None = None) -> ForceAssessment:
 
     # ── 系统判断 ──
     signals = []
-    if gini is not None and gini > 0.45:
-        signals.append("贫富分化极端")
+    if gini is not None and gini > 40:
+        signals.append(f"贫富分化严重(基尼{gini:.0f})")
     if wage_gap is not None and wage_gap < -2:
         signals.append("工资严重落后于生产率")
     if deficit is not None and deficit > 8:
