@@ -1796,6 +1796,47 @@ def _compute_asset_impacts(
             old_score, old_paths = all_scores["equity_defensive"]
             all_scores["equity_defensive"] = (old_score - momentum_bonus * 0.5, old_paths)
 
+    # ── 债券收益/风险不对称惩罚 ──
+    # 达利欧: 资产的上行空间和下行空间不对称时,要调整仓位
+    #
+    # 零利率时(< 1%): 债券上涨空间有限,下跌空间大 → 惩罚
+    # 高通胀+零利率(2021): 利率正常化风险极大 → 加重惩罚
+    if macro is not None and macro.fed_funds_rate is not None and "nominal_bond" in all_scores:
+        rate = macro.fed_funds_rate
+        cpi = macro.cpi_actual or 2.0
+
+        penalty = 0.0
+        reason = ""
+
+        if rate < 1.0:
+            # 零利率: 基础惩罚
+            penalty = -0.15 * (1.0 - rate)
+            reason = f"零下界(rate={rate:.1f}%)"
+
+            # 通胀高于利率很多 → 利率正常化压力更大
+            if cpi > rate + 2.0:
+                extra = -0.10 * (cpi - rate - 2.0) / 3.0
+                penalty += extra
+                reason += f"+通胀差({cpi-rate:.1f}pp)"
+
+        if penalty != 0:
+            old_score, old_paths = all_scores["nominal_bond"]
+            all_scores["nominal_bond"] = (
+                old_score + penalty,
+                old_paths + [f"债券不对称罚{penalty:+.2f}({reason})"]
+            )
+
+    # ── 零利率+低通胀: 黄金叙事风险 ──
+    # QE 印钱→黄金该涨(通胀对冲)。但如果通胀一直不来→叙事破灭→黄金跌
+    if (macro is not None and macro.fed_funds_rate is not None
+        and macro.fed_funds_rate < 0.5 and macro.cpi_actual is not None
+        and macro.cpi_actual < 2.0 and "gold" in all_scores):
+        old_score, old_paths = all_scores["gold"]
+        all_scores["gold"] = (
+            old_score - 0.12,
+            old_paths + ["宽松但通胀低→黄金叙事风险"]
+        )
+
     # ── 索罗斯偏差调整: 被市场高估的资产减分，被低估的加分 ──
     if soros_adjustments:
         for asset_type, adj in soros_adjustments.items():

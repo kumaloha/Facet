@@ -37,6 +37,7 @@ from loguru import logger
 from anchor.extract.pipelines._mapreduce import (
     ChunkMeta,
     ExtractionResult,
+    estimate_max_chunk_chars,
     map_reduce_extract,
     merge_table_results,
 )
@@ -123,7 +124,7 @@ def chunk_10k(content: str, skip_sections: set[str] | None = None) -> list[Chunk
     if len(positions) < 2:
         # 无法识别章节，按长度切
         logger.warning("[10-K] 无法识别章节标记，按长度切分")
-        max_chunk = 40000
+        max_chunk = estimate_max_chunk_chars()
         if len(content) <= max_chunk:
             return [ChunkMeta("full", content, "business")]
         chunks = []
@@ -136,7 +137,8 @@ def chunk_10k(content: str, skip_sections: set[str] | None = None) -> list[Chunk
     positions.sort(key=lambda x: x[0])
 
     # 切分（超长段递归拆分，保证每段 ≤ max_chunk_chars）
-    max_chunk_chars = 40000  # 清理装饰字符后 40K chars ≈ 10-15K token
+    # 动态计算：根据当前模型 context window 自动适配
+    max_chunk_chars = estimate_max_chunk_chars()
     chunks = []
     for i, (start, name) in enumerate(positions):
         # 跳过 XBRL 已覆盖的章节
@@ -160,7 +162,7 @@ def chunk_10k(content: str, skip_sections: set[str] | None = None) -> list[Chunk
                 chunks.append(ChunkMeta(f"{name}{suffix}", text[s:e], name))
 
     if not chunks:
-        chunks = [ChunkMeta("full", content[:80000], "business")]
+        chunks = [ChunkMeta("full", content[:120000], "business")]
 
     logger.info(f"[10-K] 拆分为 {len(chunks)} 段: {[c.section_name for c in chunks]}")
     return chunks
