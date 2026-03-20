@@ -11,7 +11,7 @@
 用真实历史各资产类别年回报率回测。
 """
 
-from polaris.chains.all_weather import (
+from axion.strategies.all_weather import (
     build_all_weather, format_all_weather,
     BRIDGEWATER_APPROXIMATE, verify_quadrant_coverage,
     AllWeatherResult,
@@ -336,7 +336,7 @@ def test_quadrant_coverage():
 
 def test_5_vs_7_assets():
     """5 资产 vs 7 资产（加 TIPS + EM 债）对比。"""
-    from polaris.chains.all_weather import backtest_all_weather
+    from axion.strategies.all_weather import backtest_all_weather
 
     print(f"\n{'=' * 70}")
     print("  5 资产 vs 7 资产对比")
@@ -371,7 +371,7 @@ def test_5_vs_7_assets():
 
 def test_rebalance_strategies():
     """对比三种再平衡策略: 买入持有 vs 年度 vs 阈值触发。"""
-    from polaris.chains.all_weather import backtest_all_weather, check_rebalance, simulate_drift
+    from axion.strategies.all_weather import backtest_all_weather, check_rebalance, simulate_drift
 
     print(f"\n{'=' * 70}")
     print("  再平衡策略对比回测 (17 年)")
@@ -446,7 +446,7 @@ def main():
 
 def test_stress_scenarios():
     """极端压力测试: 超越历史的假想场景。"""
-    from polaris.chains.all_weather import backtest_all_weather
+    from axion.strategies.all_weather import backtest_all_weather
 
     print(f"\n{'=' * 70}")
     print("  压力测试: 极端场景")

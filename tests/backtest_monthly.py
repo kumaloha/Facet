@@ -12,7 +12,7 @@
 import json
 import statistics
 from pathlib import Path
-from polaris.chains.all_weather import BRIDGEWATER_APPROXIMATE
+from axion.strategies.all_weather import BRIDGEWATER_APPROXIMATE
 from polaris.chains.soros import compute_complacency_signal, MarketImplied
 
 DATA_DIR = Path(__file__).parent

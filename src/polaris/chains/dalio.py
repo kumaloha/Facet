@@ -2357,7 +2357,7 @@ def _step_risk_parity() -> tuple[ChainStep, dict[str, float]]:
     1. 有 ETF 数据 → ERC 优化（波动率 + 相关性矩阵）
     2. 无数据 → Bridgewater 公开近似权重
     """
-    from polaris.chains.all_weather import build_all_weather
+    from axion.strategies.all_weather import build_all_weather
 
     step = ChainStep(
         name="全天候底仓",
