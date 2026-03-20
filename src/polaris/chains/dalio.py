@@ -1646,6 +1646,240 @@ def _compute_asset_impacts(
     macro: MacroContext | None = None,
     soros_adjustments: dict[str, float] | None = None,
 ) -> list[AssetImpact]:
+    """决策树: 从主导机制直接映射到赢家/输家。
+
+    不用加权求和。不用补丁。
+    识别主要矛盾 → 查决策树 → 出赢家/输家。
+    均值回归作为唯一的后处理（不是补丁，是独立信号）。
+    """
+    # ── 识别主导机制（排除 policy_response，它是响应不是矛盾）──
+    real_nodes = {k: v for k, v in nodes.items() if k != "policy_response"}
+    dominant = max(real_nodes.items(), key=lambda x: abs(x[1].value) * x[1].confidence)
+    dom_name, dom_node = dominant
+
+    # 次要机制
+    secondary = sorted(
+        [(k, v) for k, v in real_nodes.items() if k != dom_name],
+        key=lambda x: abs(x[1].value) * x[1].confidence, reverse=True
+    )
+    sec_name = secondary[0][0] if secondary else None
+    sec_node = secondary[0][1] if secondary else None
+
+    evidence = [f"主导: {dom_name}={dom_node.value:+.2f}"]
+    if sec_name:
+        evidence.append(f"次要: {sec_name}={sec_node.value:+.2f}")
+
+    # ── 决策树 ──
+    # 每个分支: (winners, losers, reason)
+    winners: list[str] = []
+    losers: list[str] = []
+    reason = ""
+
+    if dom_name == "inflation_pressure":
+        if dom_node.value > 0.3:
+            # 通胀上行
+            winners = ["commodity", "gold", "inflation_linked_bond"]
+            losers = ["long_term_bond", "intermediate_bond"]
+            reason = "通胀上行→大宗/黄金赢，长债输"
+            # 股票看企业能不能扛住
+            corp = nodes.get("corporate_health")
+            if corp and corp.value < -0.2:
+                losers.append("equity_cyclical")
+                reason += "（企业也差→股票也输）"
+        else:
+            # 通缩
+            winners = ["long_term_bond", "gold", "intermediate_bond"]
+            losers = ["commodity", "equity_cyclical"]
+            reason = "通缩→长债/黄金赢，大宗/股票输"
+
+    elif dom_name == "credit_availability":
+        if dom_node.value < -0.3:
+            # 信贷紧缩
+            winners = ["cash", "gold", "long_term_bond"]
+            losers = ["equity_cyclical", "em_bond", "commodity"]
+            reason = "信贷紧缩→现金/黄金/国债赢，股票/EM/大宗输"
+        else:
+            # 信贷宽松
+            winners = ["equity_cyclical", "em_bond", "commodity"]
+            losers = ["cash", "gold"]
+            reason = "信贷宽松→股票/EM/大宗赢，现金/黄金输"
+
+    elif dom_name == "default_pressure":
+        if dom_node.value > 0.3:
+            # 违约压力高
+            winners = ["gold", "cash", "long_term_bond"]
+            losers = ["equity_cyclical", "em_bond", "commodity"]
+            reason = "违约压力高→避险赢，风险输"
+        else:
+            winners = ["equity_cyclical", "em_bond"]
+            losers = ["gold", "cash"]
+            reason = "违约压力低→风险偏好赢"
+
+    elif dom_name == "corporate_health":
+        if dom_node.value > 0.3:
+            winners = ["equity_cyclical", "commodity", "em_bond"]
+            losers = ["gold", "cash"]
+            reason = "企业健康→周期股/大宗赢"
+        else:
+            winners = ["gold", "cash", "long_term_bond"]
+            losers = ["equity_cyclical", "commodity"]
+            reason = "企业差→避险赢，周期输"
+
+    elif dom_name == "consumer_health":
+        if dom_node.value > 0.3:
+            winners = ["equity_cyclical", "commodity"]
+            losers = ["gold", "cash"]
+            reason = "消费强→周期赢"
+        else:
+            winners = ["gold", "cash", "long_term_bond"]
+            losers = ["equity_cyclical", "commodity", "em_bond"]
+            reason = "消费弱→避险赢"
+
+    elif dom_name == "debt_service_burden":
+        if dom_node.value < -0.5:
+            # 偿债压力极大→主权信用风险
+            winners = ["gold", "commodity"]
+            losers = ["long_term_bond", "equity_cyclical"]
+            reason = "偿债极重→对主权不信任→黄金/大宗赢，国债/股票输"
+        else:
+            winners = ["equity_cyclical", "long_term_bond"]
+            losers = ["gold"]
+            reason = "偿债轻松→正常配置"
+
+    else:
+        # fallback
+        winners = ["equity_cyclical", "long_term_bond"]
+        losers = ["commodity", "gold"]
+        reason = "无明确主导→默认"
+
+    evidence.append(f"决策: {reason}")
+
+    # ── 次要机制修正: 组合效应 ──
+    # 例: 主导=通胀高 + 次要=企业强 → equity 不该是 loser（盈利能覆盖通胀）
+    # 例: 主导=信贷紧 + 次要=通胀高 → commodity 应该留在 winner（供给侧通胀）
+    magnitude_boost = 1.0
+    if sec_node and abs(sec_node.value) > 0.3:
+        # 企业/消费者强 → equity 不应该在 loser
+        if sec_name in ("corporate_health", "consumer_health") and sec_node.value > 0.3:
+            if "equity_cyclical" in losers:
+                losers.remove("equity_cyclical")
+                if "equity_cyclical" not in winners:
+                    winners.append("equity_cyclical")
+                evidence.append(f"次要{sec_name}强({sec_node.value:+.2f})→equity从loser救出")
+
+        # 企业/消费者弱 → equity 更确定是 loser
+        if sec_name in ("corporate_health", "consumer_health") and sec_node.value < -0.3:
+            if "equity_cyclical" in losers:
+                magnitude_boost = 1.3
+                evidence.append(f"次要{sec_name}弱→加强equity loser")
+            elif "equity_cyclical" not in winners and "equity_cyclical" not in losers:
+                losers.append("equity_cyclical")
+                evidence.append(f"次要{sec_name}弱→equity加入loser")
+
+        # 信贷紧 + 作为次要 → em_bond 更危险
+        if sec_name == "credit_availability" and sec_node.value < -0.3:
+            if "em_bond" not in losers:
+                losers.append("em_bond")
+                evidence.append(f"次要信贷紧→em_bond加入loser")
+
+        # 通胀高 + 作为次要 → bond 更危险
+        if sec_name == "inflation_pressure" and sec_node.value > 0.3:
+            if "long_term_bond" not in losers:
+                losers.append("long_term_bond")
+                evidence.append(f"次要通胀高→long_term_bond加入loser")
+            if "long_term_bond" in winners:
+                winners.remove("long_term_bond")
+
+    # ── policy_response 作为修饰器（不是主导，但影响方向）──
+    policy = nodes.get("policy_response")
+    if policy and abs(policy.value) > 0.3:
+        if policy.value > 0.5:
+            # 强宽松 → 有利于风险资产（但不翻转主导判断）
+            if "equity_cyclical" in losers and magnitude_boost < 1.2:
+                # 只在主导信号不太强时，政策宽松才能救 equity
+                if abs(dom_node.value) < 0.5:
+                    losers.remove("equity_cyclical")
+                    evidence.append(f"政策强宽松({policy.value:+.2f})→equity从loser救出")
+        elif policy.value < -0.3:
+            # 紧缩 → 加重债券/股票压力
+            if "long_term_bond" not in losers and "long_term_bond" in winners:
+                winners.remove("long_term_bond")
+                evidence.append(f"政策紧缩({policy.value:+.2f})→bond从winner移除")
+
+    # ── 均值回归（唯一的后处理，不是补丁）──
+    REVERSION = {
+        "long_term_bond": (15, 0.6),     # 前年涨>15%→强力降级
+        "intermediate_bond": (15, 0.4),
+        "commodity": (20, 0.4),
+        "em_bond": (15, 0.4),
+        "equity_cyclical": (30, 0.2),    # 股票回归弱
+        "gold": (30, 0.15),              # 黄金几乎不回归
+    }
+    if macro and macro.prior_returns:
+        for asset, prior_ret in macro.prior_returns.items():
+            params = REVERSION.get(asset)
+            if params and prior_ret > params[0]:
+                # 前年涨太多→从 winner 降级到中性，或从中性降级到 loser
+                if asset in winners:
+                    winners.remove(asset)
+                    evidence.append(f"均值回归: {asset}去年{prior_ret:+.0f}%→从winner移除")
+                elif asset not in losers:
+                    losers.append(asset)
+                    evidence.append(f"均值回归: {asset}去年{prior_ret:+.0f}%→加入loser")
+
+    # ── 构建输出: loser 从决策树，winner 从加权求和 ──
+    impacts: list[AssetImpact] = []
+    dom_strength = abs(dom_node.value) * dom_node.confidence * magnitude_boost
+
+    # Loser: 决策树直接输出（排除法——跟主要矛盾冲突的资产）
+    for asset in losers:
+        impacts.append(AssetImpact(
+            asset_type=asset,
+            raw_score=round(-dom_strength, 3),
+            contributing_paths=evidence[:3],
+            direction="underweight",
+            magnitude=round(min(dom_strength, 0.8), 2),
+        ))
+
+    # Winner: 加权求和（综合法——不在 loser 里的资产按节点得分排名）
+    loser_set = set(losers)
+    all_assets = list(ASSET_CAUSAL_MAP.keys())
+    winner_candidates = [a for a in all_assets if a not in loser_set]
+
+    # 用旧的加权求和给每个 winner 候选算分
+    candidate_scores: list[tuple[str, float]] = []
+    for asset_type in winner_candidates:
+        score = 0.0
+        sources = ASSET_CAUSAL_MAP.get(asset_type, [])
+        for node_name, weight, sign in sources:
+            node = nodes.get(node_name)
+            if node:
+                score += node.value * sign * weight * node.confidence
+        candidate_scores.append((asset_type, score))
+
+    # 按分数排名，取前 3-4 个作为 winner
+    candidate_scores.sort(key=lambda x: x[1], reverse=True)
+    n_winners = min(4, len(candidate_scores))
+    for asset, score in candidate_scores[:n_winners]:
+        if score > -0.1:  # 只要不是明显负分都可以 overweight
+            impacts.append(AssetImpact(
+                asset_type=asset,
+                raw_score=round(score, 3),
+                contributing_paths=evidence[:3] + [f"综合分{score:+.2f}"],
+                direction="overweight",
+                magnitude=round(max(abs(score), 0.1), 2),
+            ))
+
+    impacts.sort(key=lambda x: (-1 if x.direction == "overweight" else 1, -x.magnitude))
+    return impacts
+
+
+def _compute_asset_impacts_legacy(
+    nodes: dict[str, MechanismNode],
+    profile: CountryProfile | None = None,
+    macro: MacroContext | None = None,
+    soros_adjustments: dict[str, float] | None = None,
+) -> list[AssetImpact]:
     """从机制节点计算资产影响 — 主导机制加权 + 轨迹放大 + 国别适配 + 相对排名。
 
     普适方案:
