@@ -1612,7 +1612,9 @@ def _propagate_causal_graph(macro: MacroContext) -> CausalGraphResult:
     }
 
     profile = COUNTRY_PROFILES.get(macro.country, CountryProfile())
-    asset_impacts = _compute_asset_impacts(nodes, profile, macro)
+    # 索罗斯调整在外部计算后通过 _soros_adj 临时属性传入
+    soros_adj = getattr(macro, '_soros_adj', None)
+    asset_impacts = _compute_asset_impacts(nodes, profile, macro, soros_adj)
 
     return CausalGraphResult(
         nodes=nodes,
@@ -1626,6 +1628,7 @@ def _compute_asset_impacts(
     nodes: dict[str, MechanismNode],
     profile: CountryProfile | None = None,
     macro: MacroContext | None = None,
+    soros_adjustments: dict[str, float] | None = None,
 ) -> list[AssetImpact]:
     """从机制节点计算资产影响 — 主导机制加权 + 轨迹放大 + 国别适配 + 相对排名。
 
@@ -1792,6 +1795,16 @@ def _compute_asset_impacts(
         if "equity_defensive" in all_scores:
             old_score, old_paths = all_scores["equity_defensive"]
             all_scores["equity_defensive"] = (old_score - momentum_bonus * 0.5, old_paths)
+
+    # ── 索罗斯偏差调整: 被市场高估的资产减分，被低估的加分 ──
+    if soros_adjustments:
+        for asset_type, adj in soros_adjustments.items():
+            if asset_type in all_scores:
+                old_score, old_paths = all_scores[asset_type]
+                all_scores[asset_type] = (
+                    old_score + adj,
+                    old_paths + [f"索罗斯{adj:+.2f}"]
+                )
 
     # ── 分组相对排名 ──
     RISK_GROUP = {"equity_cyclical", "equity_defensive", "commodity"}

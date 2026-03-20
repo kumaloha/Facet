@@ -8,7 +8,8 @@
 """
 
 from data_historical_returns import ACTUAL_RETURNS
-from polaris.chains.dalio import MacroContext, evaluate
+from polaris.chains.dalio import MacroContext, evaluate, to_dalio_result
+from polaris.chains.soros import MarketImplied, evaluate_soros, compute_soros_adjustments
 
 # ── 资产类别映射: ACTUAL_RETURNS key → 达利欧引擎 asset_type ──
 # 达利欧引擎用: equity_cyclical, nominal_bond, inflation_linked_bond, commodity, gold, cash
@@ -228,10 +229,38 @@ def main():
         # 1. 真实 winners/losers
         winners, losers = get_winners_losers(year_data)
 
-        # 2. 引擎输出
+        # 2. 引擎输出 — 达利欧 + 索罗斯联合
+        # 先跑达利欧获取基本面预测
         chain = evaluate(macro)
+        dalio_result = to_dalio_result(chain)
+
+        # 跑索罗斯: 用市场数据检测偏差
+        market = MarketImplied(
+            breakeven_5y=None,  # 会在下面按年填入
+            credit_spread_hy=None,
+            vix=macro.vix,
+        )
+        # 每年的 breakeven 和 credit spread 近似值
+        _market_data = {
+            2008: (1.0, 18.0), 2009: (1.5, 8.0), 2010: (1.8, 6.5), 2011: (2.0, 7.5),
+            2012: (2.0, 5.5), 2013: (2.2, 4.5), 2014: (1.8, 4.0), 2015: (1.5, 5.5),
+            2016: (1.7, 5.0), 2017: (1.8, 3.5), 2018: (2.0, 4.0), 2019: (1.6, 4.0),
+            2020: (1.2, 8.0), 2021: (2.5, 3.0), 2022: (2.8, 5.0), 2023: (2.3, 4.5),
+            2024: (2.3, 3.5),
+        }
+        if year in _market_data:
+            market.breakeven_5y, market.credit_spread_hy = _market_data[year]
+
+        soros_result = evaluate_soros(dalio_result, market, current_rate=macro.fed_funds_rate)
+        soros_adj = compute_soros_adjustments(soros_result)
+
         ow = {t.asset_type for t in chain.active_tilts if t.direction == "overweight"}
         uw = {t.asset_type for t in chain.active_tilts if t.direction == "underweight"}
+
+        # 索罗斯调整: 需要真实 FRED 数据才可靠。近似数据噪音太大,暂不翻转。
+        # TODO: 接入真实 FRED breakeven/credit spread 后启用
+        # if soros_adj: ...
+
         quadrant = chain.regime.quadrant if chain.regime else "N/A"
 
         # 3. 匹配

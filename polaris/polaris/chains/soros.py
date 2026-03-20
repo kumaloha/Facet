@@ -544,6 +544,69 @@ def evaluate_soros(
 # ══════════════════════════════════════════════════════════════
 
 
+def compute_soros_adjustments(result: SorosChainResult) -> dict[str, float]:
+    """把索罗斯偏差转化为资产排名调整分数。
+
+    核心逻辑:
+    - 通胀偏差: 达利欧比市场更鹰 → 市场低估了通胀 → nominal_bond 是被高估的(减分)
+    - 信用偏差: 达利欧比市场更熊 → 市场低估了风险 → equity 是被高估的(减分)
+    - 波动率偏差: VIX 太低(市场自满) → 所有风险资产被高估(减分)
+
+    返回: {asset_type: adjustment} 正=加分 负=减分
+    """
+    adjustments: dict[str, float] = {}
+
+    for div in result.divergences:
+        if div.gap_magnitude == "small":
+            continue
+
+        strength = 0.15 if div.gap_magnitude == "medium" else 0.25
+
+        if div.type == DivergenceType.INFLATION:
+            if div.gap > 0:
+                # 达利欧认为通胀更高 → 市场低估通胀 → 名义债券被高估
+                adjustments["nominal_bond"] = adjustments.get("nominal_bond", 0) - strength
+                adjustments["inflation_linked_bond"] = adjustments.get("inflation_linked_bond", 0) + strength * 0.5
+                adjustments["commodity"] = adjustments.get("commodity", 0) + strength * 0.5
+            else:
+                # 达利欧认为通胀更低 → 市场高估了通胀 → 大宗/黄金被高估
+                adjustments["commodity"] = adjustments.get("commodity", 0) - strength
+                adjustments["gold"] = adjustments.get("gold", 0) - strength * 0.5
+                adjustments["nominal_bond"] = adjustments.get("nominal_bond", 0) + strength * 0.5
+
+        elif div.type == DivergenceType.CREDIT_RISK:
+            if div.gap > 0:
+                # 达利欧更悲观 → 市场低估风险 → 风险资产被高估
+                adjustments["equity_cyclical"] = adjustments.get("equity_cyclical", 0) - strength
+                adjustments["gold"] = adjustments.get("gold", 0) + strength * 0.5
+                adjustments["cash"] = adjustments.get("cash", 0) + strength * 0.5
+            else:
+                # 达利欧更乐观 → 市场高估了风险 → 风险资产被低估
+                adjustments["equity_cyclical"] = adjustments.get("equity_cyclical", 0) + strength
+                adjustments["nominal_bond"] = adjustments.get("nominal_bond", 0) - strength * 0.3
+
+        elif div.type == DivergenceType.VOLATILITY:
+            if div.gap > 0:
+                # 达利欧看到更高风险 → VIX 太低 → 所有风险资产被高估
+                adjustments["equity_cyclical"] = adjustments.get("equity_cyclical", 0) - strength * 0.7
+                adjustments["commodity"] = adjustments.get("commodity", 0) - strength * 0.5
+                adjustments["gold"] = adjustments.get("gold", 0) + strength * 0.7
+                adjustments["cash"] = adjustments.get("cash", 0) + strength * 0.5
+            else:
+                # VIX 太高(市场恐慌) → 风险资产被低估
+                adjustments["equity_cyclical"] = adjustments.get("equity_cyclical", 0) + strength * 0.5
+                adjustments["gold"] = adjustments.get("gold", 0) - strength * 0.3
+
+        elif div.type == DivergenceType.POLICY:
+            if div.gap < 0:
+                # 达利欧预期更多降息 → 市场低估降息 → 债券被低估
+                adjustments["nominal_bond"] = adjustments.get("nominal_bond", 0) + strength
+            else:
+                adjustments["nominal_bond"] = adjustments.get("nominal_bond", 0) - strength
+
+    return adjustments
+
+
 def format_soros(result: SorosChainResult) -> str:
     """格式化索罗斯链报告。"""
     lines = [""]
