@@ -400,8 +400,8 @@ def assess_force3_external_order(data: dict | None = None) -> ForceAssessment:
     signals = []
     if tariff_rate is not None and tariff_rate > 3:
         signals.append(f"关税率 {tariff_rate}% (贸易壁垒上升)")
-    if oil_change is not None and oil_change > 40:
-        signals.append(f"油价暴涨 {oil_change}% (可能有地缘冲击)")
+    if oil_change is not None and oil_change > 30:
+        signals.append(f"油价大涨 {oil_change}% (可能有地缘/供给冲击)")
     if export_growth is not None and export_growth < -10:
         signals.append(f"出口暴跌 {export_growth}% (贸易收缩)")
 
@@ -417,6 +417,17 @@ def assess_force3_external_order(data: dict | None = None) -> ForceAssessment:
         f.system_direction = ForceDirection.NEUTRAL
         f.system_reasoning = "无明显外部秩序恶化信号（或数据不足）"
         f.system_confidence = 0.2
+
+    # 经济政策不确定性指数 (EPU)
+    epu = d.get("epu_index")
+    if epu is not None:
+        f.indicators.append(Indicator(
+            name="政策不确定性(EPU)", value=epu,
+            context="均值~100. >150=上升, >200=高度不确定, >400=极端. 2020峰值~600"))
+        if epu > 200:
+            signals.append(f"政策不确定性极高(EPU={epu:.0f})")
+        elif epu > 150:
+            signals.append(f"政策不确定性上升(EPU={epu:.0f})")
 
     # 美元走势（FRED可获取）
     dollar_yoy = d.get("dollar_index_yoy")
@@ -458,68 +469,172 @@ def assess_force3_external_order(data: dict | None = None) -> ForceAssessment:
 # ══════════════════════════════════════════════════════════════
 
 
-def assess_force4_nature(data: dict | None = None) -> ForceAssessment:
+def assess_force4_nature(data: dict | None = None, live_snapshot: dict | None = None) -> ForceAssessment:
     """Force 4: 自然之力——疫情、气候灾害、资源冲击。
 
     达利欧: 自然之力是不可预测但影响巨大的外生冲击。
     特点: 突发性强、持续时间不确定、政策响应决定后果好坏。
     COVID 是近代最典型案例——彻底改变了财政/货币政策范式。
+
+    数据源（一手）:
+      - USGS Earthquake API — 全球 M5.5+ 地震
+      - disease.sh — COVID / 流感实时
+      - WHO Disease Outbreak News — 疫情通报
+      - NOAA NCEI — 十亿美元灾害
+      - FRED CPIUFDSL — 食品 CPI（供给冲击代理）
     """
     f = ForceAssessment(force_name="自然之力", force_id=4)
     d = data or {}
+    snap = live_snapshot or {}
+    snap_summary = snap.get("summary", {})
 
-    # ── 疫情 ──
+    signals_negative = []
+
+    # ═══════════════════════════════════════
+    # 1. 疫情 — disease.sh + WHO
+    # ═══════════════════════════════════════
+
+    # 手动输入 (历史回测用)
     pandemic = d.get("pandemic_active", False)
     if pandemic:
         f.indicators.append(Indicator(
-            name="活跃疫情", value=1,
+            name="活跃疫情 [人工标注]", value=1,
             context="全球大流行进行中"))
         pandemic_severity = d.get("pandemic_severity", "unknown")
         f.indicators.append(Indicator(
             name="严重程度", value=None,
             context=f"{pandemic_severity}"))
+        signals_negative.append("活跃疫情(人工标注)")
 
-    # ── 极端天气/气候 ──
+    # 实时 COVID 数据 (disease.sh)
+    covid = snap.get("disease", {}).get("covid") if snap else None
+    if covid:
+        active = covid.get("active", 0)
+        daily_deaths = covid.get("deaths_today", 0)
+        cases_today = covid.get("cases_today", 0)
+        f.indicators.append(Indicator(
+            name="COVID 全球活跃病例", value=active,
+            context="disease.sh 实时. >10M=大规模流行"))
+        f.indicators.append(Indicator(
+            name="COVID 今日死亡", value=daily_deaths,
+            context=">1000/天=严重, >5000/天=危机"))
+        f.indicators.append(Indicator(
+            name="COVID 今日新增", value=cases_today,
+            context=">100K/天=快速传播"))
+        # 判断阈值
+        if active > 10_000_000 and daily_deaths > 1000:
+            signals_negative.append(f"COVID 活跃{active/1e6:.0f}M, 日死亡{daily_deaths}")
+        elif active > 50_000_000:
+            signals_negative.append(f"COVID 活跃{active/1e6:.0f}M(大规模)")
+
+    # WHO 疫情通报
+    who_alerts = snap.get("who_alerts", [])
+    if who_alerts:
+        latest = who_alerts[0]
+        f.indicators.append(Indicator(
+            name="WHO 最新通报", value=None,
+            context=f"{latest.get('title', '')[:80]}"))
+        # 检测高危关键词
+        high_risk_keywords = ["pandemic", "emergency", "PHEIC", "outbreak", "avian influenza",
+                              "Ebola", "MERS", "novel", "H5N1"]
+        for alert in who_alerts[:5]:
+            title = alert.get("title", "")
+            if any(kw.lower() in title.lower() for kw in high_risk_keywords):
+                signals_negative.append(f"WHO高危通报: {title[:50]}")
+                break
+
+    # ═══════════════════════════════════════
+    # 2. 地震 — USGS
+    # ═══════════════════════════════════════
+    eq_count = snap_summary.get("significant_earthquakes_30d", 0)
+    max_mag = snap_summary.get("max_earthquake_30d", 0)
+    tsunami_warnings = snap_summary.get("tsunami_warnings", 0)
+
+    if eq_count > 0:
+        f.indicators.append(Indicator(
+            name="M5.5+地震(30天)", value=eq_count,
+            context=f"最大M{max_mag:.1f}, 海啸警报{tsunami_warnings}次. USGS实时"))
+        # 重大地震
+        earthquakes = snap.get("earthquakes", [])
+        for eq in earthquakes[:3]:
+            f.indicators.append(Indicator(
+                name=f"地震 M{eq.get('magnitude', 0):.1f}",
+                value=eq.get("magnitude", 0),
+                context=eq.get("place", "")))
+
+    if max_mag >= 8.0:
+        signals_negative.append(f"M{max_mag:.1f}超级地震")
+    elif max_mag >= 7.0 and tsunami_warnings > 0:
+        signals_negative.append(f"M{max_mag:.1f}地震+海啸警报{tsunami_warnings}")
+
+    # ═══════════════════════════════════════
+    # 3. 气候灾害 — NOAA + 手动
+    # ═══════════════════════════════════════
     climate_cost = d.get("climate_damage_pct_gdp")
     if climate_cost is not None:
         f.indicators.append(Indicator(
             name="气候灾害损失/GDP", value=climate_cost, unit="%",
-            context=">1%=显著经济冲击"))
+            context=">1%=显著经济冲击. NOAA十亿美元灾害"))
+        if climate_cost > 1.0:
+            signals_negative.append(f"气候灾害损失{climate_cost}%GDP")
 
-    # ── 供给冲击 ──
+    noaa = snap.get("noaa", {})
+    if noaa.get("count", 0) > 0:
+        f.indicators.append(Indicator(
+            name="十亿美元灾害数(NOAA)", value=noaa["count"],
+            context=f"年损失{noaa.get('total_cost_billions', 0):.0f}B$. >20次=极端年份"))
+
+    # ═══════════════════════════════════════
+    # 4. 供给冲击 — 食品/能源
+    # ═══════════════════════════════════════
     food_inflation = d.get("food_price_yoy")
     if food_inflation is not None:
         f.indicators.append(Indicator(
             name="食品价格同比", value=food_inflation, unit="%",
-            context=">10%=可能有供给冲击（旱灾/出口禁令）"))
+            context=">10%=供给冲击信号(旱灾/出口禁令). FRED CPIUFDSL"))
+        if food_inflation > 15:
+            signals_negative.append(f"食品价格飙升{food_inflation}%")
+        elif food_inflation > 10:
+            signals_negative.append(f"食品通胀{food_inflation}%")
 
     energy_disruption = d.get("energy_supply_disruption")
     if energy_disruption is not None:
         f.indicators.append(Indicator(
             name="能源供给中断", value=energy_disruption,
-            context="百万桶/天的损失量"))
+            context="百万桶/天的损失量. >2=重大中断"))
+        if energy_disruption > 2:
+            signals_negative.append(f"能源供给中断{energy_disruption}M桶/天")
 
-    # ── 系统判断 ──
-    if pandemic:
+    # ═══════════════════════════════════════
+    # 系统判断
+    # ═══════════════════════════════════════
+    if pandemic or (covid and covid.get("active", 0) > 50_000_000 and covid.get("deaths_today", 0) > 3000):
         f.system_direction = ForceDirection.STRONGLY_NEGATIVE
-        f.system_reasoning = "活跃疫情——经济活动受限，政策不确定性极高"
-        f.system_confidence = 0.7
-    elif climate_cost is not None and climate_cost > 1.0:
+        f.system_reasoning = f"全球大流行——经济活动受限，政策不确定性极高"
+        f.system_confidence = 0.8
+    elif len(signals_negative) >= 3:
+        f.system_direction = ForceDirection.STRONGLY_NEGATIVE
+        f.system_reasoning = f"多重自然冲击: {'; '.join(signals_negative[:3])}"
+        f.system_confidence = 0.6
+    elif len(signals_negative) >= 1:
         f.system_direction = ForceDirection.NEGATIVE
-        f.system_reasoning = f"气候灾害显著: 损失 {climate_cost}% GDP"
-        f.system_confidence = 0.5
-    elif food_inflation is not None and food_inflation > 15:
-        f.system_direction = ForceDirection.NEGATIVE
-        f.system_reasoning = f"食品价格飙升 {food_inflation}%——可能有供给冲击"
+        f.system_reasoning = f"自然压力: {'; '.join(signals_negative)}"
         f.system_confidence = 0.4
     else:
         f.system_direction = ForceDirection.NEUTRAL
-        f.system_reasoning = "无明显自然冲击"
+        f.system_reasoning = "无重大自然冲击"
         f.system_confidence = 0.5
 
+    # 高亮
     f.system_highlights.append(
         "自然冲击的特点: 突发、不可预测、政策响应决定后果。"
-        "系统能检测正在发生的冲击，但不能预测。")
+        "系统能检测正在发生的冲击，但不能预测下一个。")
+    if who_alerts:
+        f.system_highlights.append(
+            f"WHO 近期关注: {', '.join(a.get('title', '')[:40] for a in who_alerts[:3])}")
+    if tsunami_warnings > 0:
+        f.system_highlights.append(f"海啸警报: 近30天{tsunami_warnings}次")
+
     return f
 
 
@@ -569,18 +684,27 @@ def assess_force5_technology(data: dict | None = None) -> ForceAssessment:
             name="新兴行业/GDP", value=data["new_sector_gdp_share"], unit="%",
             context="上升=结构性转型正在发生"))
 
+    # NASDAQ 同比（科技板块代理）
+    if data and "nasdaq_yoy" in data:
+        f.indicators.append(Indicator(
+            name="NASDAQ同比", value=data["nasdaq_yoy"], unit="%",
+            context="科技板块市场表现. >20%=科技繁荣, <-20%=科技泡沫破裂"))
+
     # ── 系统判断 ──
     prod = (data or {}).get("productivity_growth")
     tech_profit = (data or {}).get("tech_sector_profit_growth")
     vc = (data or {}).get("vc_investment_growth")
+    nasdaq = (data or {}).get("nasdaq_yoy")
 
     signals_positive = []
     if prod is not None and prod > 2.0:
-        signals_positive.append(f"生产率增速 {prod}% 超趋势(~1.5%)")
+        signals_positive.append(f"生产率增速 {prod:.1f}% 超趋势(~1.5%)")
     if tech_profit is not None and tech_profit > 25:
-        signals_positive.append(f"科技利润增速 {tech_profit}%")
+        signals_positive.append(f"科技利润增速 {tech_profit:.0f}%")
+    if nasdaq is not None and nasdaq > 20:
+        signals_positive.append(f"NASDAQ同比+{nasdaq:.0f}%(科技繁荣)")
     if vc is not None and vc > 20:
-        signals_positive.append(f"VC 投资增速 {vc}%")
+        signals_positive.append(f"VC 投资增速 {vc:.0f}%")
 
     if len(signals_positive) >= 2:
         f.system_direction = ForceDirection.STRONGLY_POSITIVE
@@ -621,11 +745,14 @@ def build_five_forces_view(
     external_data: dict | None = None,
     nature_data: dict | None = None,
     tech_data: dict | None = None,
+    nature_live_snapshot: dict | None = None,
 ) -> FiveForcesView:
     """构建五大力量视图。
 
     系统自动填充能填的，标注信心水平。
     人来判断系统填不了的，特别是主要矛盾。
+
+    nature_live_snapshot: anchor.collect.nature.fetch_force4_snapshot() 的返回值
     """
     view = FiveForcesView()
 
@@ -633,7 +760,7 @@ def build_five_forces_view(
         assess_force1_debt_cycle(macro_data or {}),
         assess_force2_internal_order(internal_data),
         assess_force3_external_order(external_data),
-        assess_force4_nature(nature_data),
+        assess_force4_nature(nature_data, live_snapshot=nature_live_snapshot),
         assess_force5_technology(tech_data),
     ]
 
@@ -682,8 +809,14 @@ def format_five_forces(view: FiveForcesView) -> str:
         lines.append(f"    判断: {f.system_reasoning}")
 
         for ind in f.indicators:
-            val_str = f"{ind.value:.1f}{ind.unit}" if ind.value is not None else "无数据"
+            if ind.value is None:
+                val_str = ind.context if ind.context else "无数据"
+            elif isinstance(ind.value, float) and ind.value == int(ind.value) and abs(ind.value) >= 100:
+                val_str = f"{int(ind.value):,}{ind.unit}"
+            else:
+                val_str = f"{ind.value:.1f}{ind.unit}" if isinstance(ind.value, float) else f"{ind.value:,}{ind.unit}"
             trend_str = f" ({ind.trend})" if ind.trend else ""
+            ctx = f"  [{ind.context}]" if ind.context and ind.value is not None else ""
             lines.append(f"    · {ind.name}: {val_str}{trend_str}")
 
         for h in f.system_highlights:
@@ -703,3 +836,37 @@ def format_five_forces(view: FiveForcesView) -> str:
 
     lines.append("")
     return "\n".join(lines)
+
+
+# ══════════════════════════════════════════════════════════════
+#  一键调用：FRED + 实时自然数据 → 五大力量
+# ══════════════════════════════════════════════════════════════
+
+
+async def live_five_forces(fred_api_key: str | None = None) -> FiveForcesView:
+    """一键获取五大力量实时快照。
+
+    1. 从 FRED 拉取 Force 1-5 全部指标
+    2. 从 USGS/WHO/disease.sh 拉取 Force 4 实时数据
+    3. 合并构建五大力量视图
+    """
+    import asyncio
+    from anchor.collect.fred_forces import fetch_and_build_forces_data
+    from anchor.collect.nature import fetch_force4_snapshot
+
+    # FRED 是同步的（fredapi 库），放到线程里
+    loop = asyncio.get_event_loop()
+    fred_future = loop.run_in_executor(None, fetch_and_build_forces_data, fred_api_key)
+    nature_future = fetch_force4_snapshot()
+
+    fred_result, nature_snapshot = await asyncio.gather(fred_future, nature_future)
+    macro, internal, external, nature_fred, tech = fred_result
+
+    return build_five_forces_view(
+        macro_data=macro,
+        internal_data=internal,
+        external_data=external,
+        nature_data=nature_fred,
+        tech_data=tech,
+        nature_live_snapshot=nature_snapshot,
+    )
