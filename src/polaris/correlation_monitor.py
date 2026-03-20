@@ -261,6 +261,152 @@ def analyze_correlation_regime(
     return result
 
 
+# ══════════════════════════════════════════════════════════════
+#  个股相关性: 达利欧选股约束 — "和已有的相关性低不低"
+# ══════════════════════════════════════════════════════════════
+
+
+@dataclass
+class StockCorrelation:
+    """两只股票之间的相关性。"""
+    ticker_a: str
+    ticker_b: str
+    correlation: float
+    period_months: int = 12
+
+
+@dataclass
+class PortfolioDiversification:
+    """一组持仓的分散度评估。"""
+    holdings: list[str]
+    # 相关性矩阵
+    correlations: dict[str, float] = field(default_factory=dict)  # "NVDA-GOOGL": 0.46
+    # 平均相关性 (越低越好)
+    avg_correlation: float = 0.0
+    # 最高相关对 (最不分散的)
+    most_correlated: StockCorrelation | None = None
+    # 最低相关对 (最分散的)
+    least_correlated: StockCorrelation | None = None
+    # 分散评分 0-1 (1=完美分散)
+    diversification_score: float = 0.0
+    # 建议: 加什么能改善分散
+    suggestions: list[str] = field(default_factory=list)
+
+
+def evaluate_stock_diversification(
+    holdings: list[str],
+    candidates: list[str] | None = None,
+    period: str = "1y",
+) -> PortfolioDiversification:
+    """评估一组持仓的分散度，建议下一步加什么。
+
+    Args:
+        holdings: 当前持仓 ["NVDA", "GOOGL", ...]
+        candidates: 候选加入的股票 (巴菲特选出的好公司)
+        period: 回看期
+
+    Returns:
+        PortfolioDiversification: 分散度评估 + 建议
+    """
+    import yfinance as yf
+
+    result = PortfolioDiversification(holdings=list(holdings))
+
+    all_tickers = list(holdings) + (candidates or [])
+    if len(all_tickers) < 2:
+        return result
+
+    try:
+        data = yf.download(all_tickers, period=period, auto_adjust=True, progress=False)["Close"]
+        returns = data.pct_change().dropna()
+    except Exception:
+        return result
+
+    if returns.empty or len(returns) < 20:
+        return result
+
+    corr_matrix = returns.corr()
+
+    # 持仓间的相关性
+    pair_corrs = []
+    for i, a in enumerate(holdings):
+        for b in holdings[i + 1:]:
+            if a in corr_matrix.columns and b in corr_matrix.columns:
+                c = float(corr_matrix.loc[a, b])
+                key = f"{a}-{b}"
+                result.correlations[key] = round(c, 3)
+                pair_corrs.append(StockCorrelation(a, b, round(c, 3)))
+
+    if pair_corrs:
+        result.avg_correlation = round(
+            sum(p.correlation for p in pair_corrs) / len(pair_corrs), 3
+        )
+        result.most_correlated = max(pair_corrs, key=lambda p: p.correlation)
+        result.least_correlated = min(pair_corrs, key=lambda p: p.correlation)
+        # 分散分 = 1 - 平均|相关性|
+        result.diversification_score = round(
+            max(0, 1.0 - sum(abs(p.correlation) for p in pair_corrs) / len(pair_corrs)),
+            3,
+        )
+
+    # 候选股: 哪个加了最能改善分散
+    if candidates:
+        candidate_scores = []
+        for cand in candidates:
+            if cand in holdings or cand not in corr_matrix.columns:
+                continue
+            # 计算候选和所有持仓的平均相关性
+            corrs_with_holdings = []
+            for h in holdings:
+                if h in corr_matrix.columns:
+                    corrs_with_holdings.append(abs(float(corr_matrix.loc[cand, h])))
+            if corrs_with_holdings:
+                avg_corr = sum(corrs_with_holdings) / len(corrs_with_holdings)
+                candidate_scores.append((cand, avg_corr))
+
+        # 按与持仓的平均相关性排序 (越低越好=分散效果越好)
+        candidate_scores.sort(key=lambda x: x[1])
+        for ticker, avg_c in candidate_scores[:3]:
+            result.suggestions.append(
+                f"加 {ticker} (与现有持仓平均相关性 {avg_c:.2f}) — 分散效果{'好' if avg_c < 0.3 else '一般' if avg_c < 0.5 else '差'}"
+            )
+
+    return result
+
+
+def format_stock_diversification(div: PortfolioDiversification) -> str:
+    """格式化个股分散度报告。"""
+    lines = [""]
+    lines.append("  持仓分散度 (达利欧选股约束)")
+    lines.append("  ════════════════════════════════════════════════")
+    lines.append(f"  持仓: {', '.join(div.holdings)}")
+
+    bar = "█" * int(div.diversification_score * 10) + "░" * (10 - int(div.diversification_score * 10))
+    lines.append(f"  分散评分: [{bar}] {div.diversification_score:.0%}")
+    lines.append(f"  平均相关性: {div.avg_correlation:+.2f} ({'好' if abs(div.avg_correlation) < 0.3 else '一般' if abs(div.avg_correlation) < 0.5 else '差，太集中'})")
+
+    if div.most_correlated:
+        mc = div.most_correlated
+        lines.append(f"  最集中: {mc.ticker_a}-{mc.ticker_b} = {mc.correlation:+.2f} ← 考虑减一个")
+    if div.least_correlated:
+        lc = div.least_correlated
+        lines.append(f"  最分散: {lc.ticker_a}-{lc.ticker_b} = {lc.correlation:+.2f}")
+
+    if div.correlations:
+        lines.append(f"\n  相关性矩阵:")
+        for pair, corr in sorted(div.correlations.items(), key=lambda x: -abs(x[1])):
+            bar = "+" * int(max(corr * 8, 0)) + "-" * int(max(-corr * 8, 0))
+            lines.append(f"    {pair:18s} {corr:+.2f} {bar}")
+
+    if div.suggestions:
+        lines.append(f"\n  达利欧建议 (加什么改善分散):")
+        for s in div.suggestions:
+            lines.append(f"    → {s}")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
 def format_correlation_regime(regime: CorrelationRegime) -> str:
     """格式化相关性体制报告。"""
     lines = [""]
