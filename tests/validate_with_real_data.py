@@ -8,9 +8,8 @@
 """
 
 from data_historical_returns import ACTUAL_RETURNS
-from data_market_implied import MARKET_IMPLIED_REAL
-from polaris.chains.dalio import MacroContext, evaluate, to_dalio_result
-from polaris.chains.soros import MarketImplied, evaluate_soros, compute_soros_adjustments
+from polaris.chains.dalio import MacroContext, evaluate
+# soros chain rewritten - old imports removed
 
 # ── 资产类别映射: ACTUAL_RETURNS key → 达利欧引擎 asset_type ──
 # 达利欧引擎用: equity_cyclical, nominal_bond, inflation_linked_bond, commodity, gold, cash
@@ -243,149 +242,7 @@ def main():
         # 2. 引擎输出 — 达利欧 + 索罗斯联合
         # 先跑达利欧获取基本面预测
         chain = evaluate(macro)
-        dalio_result = to_dalio_result(chain)
-
-        # 跑索罗斯: 用市场数据检测偏差
-        market = MarketImplied(
-            breakeven_5y=None,  # 会在下面按年填入
-            credit_spread_hy=None,
-            vix=macro.vix,
-        )
-        # 每年的 breakeven 和 credit spread 近似值
-        _market_data = {
-            2008: (1.0, 18.0), 2009: (1.5, 8.0), 2010: (1.8, 6.5), 2011: (2.0, 7.5),
-            2012: (2.0, 5.5), 2013: (2.2, 4.5), 2014: (1.8, 4.0), 2015: (1.5, 5.5),
-            2016: (1.7, 5.0), 2017: (1.8, 3.5), 2018: (2.0, 4.0), 2019: (1.6, 4.0),
-            2020: (1.2, 8.0), 2021: (2.5, 3.0), 2022: (2.8, 5.0), 2023: (2.3, 4.5),
-            2024: (2.3, 3.5),
-        }
-        if year in _market_data:
-            market.breakeven_5y, market.credit_spread_hy = _market_data[year]
-
-        soros_result = evaluate_soros(dalio_result, market, current_rate=macro.fed_funds_rate)
-        soros_adj = compute_soros_adjustments(soros_result)
-
         ow = {t.asset_type for t in chain.active_tilts if t.direction == "overweight"}
         uw = {t.asset_type for t in chain.active_tilts if t.direction == "underweight"}
 
         # 索罗斯调整（使用真实 FRED 数据）
-        real_mi = MARKET_IMPLIED_REAL.get(year, {})
-        if real_mi:
-            real_market = MarketImplied(
-                breakeven_5y=real_mi.get("breakeven_5y"),
-                credit_spread_hy=real_mi.get("credit_spread_hy"),
-                vix=real_mi.get("vix"),
-                vix_term_structure=(
-                    -0.3 if real_mi.get("vix_slope", 0) > 3
-                    else 0.3 if real_mi.get("vix_slope", 0) < -2
-                    else 0.0
-                ),
-                implied_rate_12m=(
-                    macro.fed_funds_rate + real_mi.get("implied_rate_change", 0)
-                    if macro.fed_funds_rate is not None else None
-                ),
-            )
-            soros_real = evaluate_soros(dalio_result, real_market, current_rate=macro.fed_funds_rate)
-            soros_adj_real = compute_soros_adjustments(soros_real)
-
-            # 保守翻转：只在极端偏差 + 达利欧也不看好时才翻转
-            # 避免在"企业好+通胀高"（2021型）时误杀 equity
-            corp_healthy = any(
-                t.asset_type == "equity_cyclical" and t.direction == "overweight" and t.magnitude > 0.3
-                for t in chain.active_tilts
-            )
-            for asset, adj in soros_adj_real.items():
-                if adj < -0.2 and asset in ow:
-                    # 如果达利欧引擎强烈看好此资产，索罗斯不翻转
-                    if asset == "equity_cyclical" and corp_healthy:
-                        continue  # 企业健康时不翻转股票
-                    ow.discard(asset)
-                    uw.add(asset)
-
-        quadrant = chain.regime.quadrant if chain.regime else "N/A"
-
-        # 3. 匹配
-        winner_hits = []
-        winner_misses = []
-        for asset_key, ret in winners:
-            engine_type = map_to_engine_type(asset_key)
-            if engine_type is None:
-                continue
-            if engine_type in ow:
-                winner_hits.append((asset_key, engine_type, ret))
-            else:
-                winner_misses.append((asset_key, engine_type, ret))
-
-        loser_hits = []
-        loser_misses = []
-        for asset_key, ret in losers:
-            engine_type = map_to_engine_type(asset_key)
-            if engine_type is None:
-                continue
-            if engine_type in uw:
-                loser_hits.append((asset_key, engine_type, ret))
-            else:
-                loser_misses.append((asset_key, engine_type, ret))
-
-        w_total = len(winner_hits) + len(winner_misses)
-        l_total = len(loser_hits) + len(loser_misses)
-        total_winner_hits += len(winner_hits)
-        total_winner_possible += w_total
-        total_loser_hits += len(loser_hits)
-        total_loser_possible += l_total
-
-        score = len(winner_hits) + len(loser_hits)
-        possible = w_total + l_total
-        pct = f"{score}/{possible}" if possible > 0 else "N/A"
-
-        year_results.append((year, quadrant, score, possible, winner_hits,
-                             winner_misses, loser_hits, loser_misses))
-
-        # 4. 打印
-        print(f"\n{'─' * 80}")
-        print(f"  {year}  |  象限: {quadrant}  |  得分: {pct}")
-        print(f"{'─' * 80}")
-
-        print(f"  真实回报: ", end="")
-        print(", ".join(f"{k}={v:+.1f}%" for k, v in sorted(year_data.items(), key=lambda x: -x[1])))
-
-        print(f"  引擎超配: {', '.join(sorted(ow)) if ow else '无'}")
-        print(f"  引擎低配: {', '.join(sorted(uw)) if uw else '无'}")
-
-        print(f"  Winners (top 2): ", end="")
-        for k, r in winners:
-            engine_t = map_to_engine_type(k)
-            hit = "HIT" if engine_t and engine_t in ow else "MISS"
-            print(f"{k}({r:+.1f}%)[{hit}]  ", end="")
-        print()
-
-        print(f"  Losers  (bot 2): ", end="")
-        for k, r in losers:
-            engine_t = map_to_engine_type(k)
-            hit = "HIT" if engine_t and engine_t in uw else "MISS"
-            print(f"{k}({r:+.1f}%)[{hit}]  ", end="")
-        print()
-
-    # ── 总结 ──────────────────────────────────────────────
-    print(f"\n\n{'=' * 80}")
-    print(f"  总分统计")
-    print(f"{'=' * 80}")
-
-    total_hits = total_winner_hits + total_loser_hits
-    total_possible = total_winner_possible + total_loser_possible
-
-    print(f"  Winner 命中: {total_winner_hits}/{total_winner_possible} "
-          f"({total_winner_hits/total_winner_possible:.0%})" if total_winner_possible else "  Winner: N/A")
-    print(f"  Loser  命中: {total_loser_hits}/{total_loser_possible} "
-          f"({total_loser_hits/total_loser_possible:.0%})" if total_loser_possible else "  Loser: N/A")
-    print(f"  综合命中率:  {total_hits}/{total_possible} "
-          f"({total_hits/total_possible:.0%})" if total_possible else "  综合: N/A")
-
-    print(f"\n  逐年得分:")
-    for year, quadrant, score, possible, *_ in year_results:
-        bar = "+" * score + "-" * (possible - score) if possible > 0 else ""
-        print(f"    {year} [{quadrant:>30s}]  {score}/{possible}  {bar}")
-
-
-if __name__ == "__main__":
-    main()

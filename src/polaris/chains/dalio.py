@@ -875,15 +875,16 @@ ASSET_CAUSAL_MAP: dict[str, list[tuple[str, float, float]]] = {
         ("credit_availability", 0.10, -1),
     ],
     "commodity": [
-        ("inflation_pressure", 0.55, +1),  # 大宗受通胀/供给驱动为主
-        ("consumer_health", 0.20, +1),      # 需求次要
-        ("corporate_health", 0.25, +1),
+        ("inflation_pressure", 0.40, +1),  # 通胀→大宗涨
+        ("debt_service_burden", 0.20, -1), # 主权债务压力→对法币不信任→实物资产涨
+        ("consumer_health", 0.20, +1),     # 需求驱动
+        ("corporate_health", 0.20, +1),    # 经济活动驱动
     ],
     "gold": [
-        ("default_pressure", 0.30, +1),      # 系统性风险→黄金避险（最重要）
-        ("inflation_pressure", 0.30, +1),     # 通胀→黄金保值
-        ("consumer_health", 0.20, -1),        # 经济弱→避险
-        ("policy_response", 0.20, +1),        # 宽松/印钱→黄金涨
+        ("debt_service_burden", 0.30, -1),    # 主权债务压力→对货币不信任→黄金涨
+        ("inflation_pressure", 0.25, +1),     # 通胀→黄金保值
+        ("default_pressure", 0.25, +1),       # 系统性风险→避险
+        ("policy_response", 0.20, +1),        # 印钱→货币贬值→黄金涨
     ],
     "cash": [
         ("default_pressure", 0.30, +1),        # 高违约风险→持现金避险
@@ -1811,27 +1812,78 @@ def _compute_asset_impacts(
             old_score, old_paths = all_scores["equity_defensive"]
             all_scores["equity_defensive"] = (old_score - momentum_bonus * 0.5, old_paths)
 
-    # ── 均值回归信号: 去年涨太多的今年可能回调 ──
-    # 达利欧: "过度延伸的趋势终将反转"
+    # ── 股债跷跷板: 利率变化 vs 盈利变化的竞赛 ──
+    # 用户先验: "股市涨幅跟不上债市利率就会跌更多"
+    # 利率上升速度 > 盈利增速 → 估值收缩 → 股票减分
+    # 盈利增速 > 利率上升速度 → 估值扩张 → 股票加分
+    if (macro is not None
+        and macro.rate_direction is not None
+        and macro.earnings_growth is not None
+        and "equity_cyclical" in all_scores):
+        # 利率年化变化 vs 盈利增速
+        rate_change_annualized = macro.rate_direction * 4  # 季度→年化
+        earnings_g = macro.earnings_growth
+
+        # 竞赛: 盈利能否覆盖利率上升
+        race = earnings_g / 10 - rate_change_annualized / 2  # 归一化
+        if abs(race) > 0.3:
+            old_score, old_paths = all_scores["equity_cyclical"]
+            adj = max(-0.3, min(0.3, race * 0.3))
+            all_scores["equity_cyclical"] = (
+                old_score + adj,
+                old_paths + [f"股债竞赛{adj:+.2f}(盈利{earnings_g:+.0f}% vs 利率{rate_change_annualized:+.1f}pp)"]
+            )
+
+    # ── 均值回归信号: 资产特异性 ──
+    # 数据驱动的发现:
+    #   long_term_bond: 前年涨>15% → 下一年 75% 负回报（均值回归极强）
+    #   commodity: 前年涨>15% → 50% 负回报（中等回归）
+    #   equity: 前年涨>20% → 仅 29% 负回报（惯性强，不回归）
+    #   gold: 前年涨>15% → 仅 20% 负回报（惯性强）
+    #
+    # 不同资产用不同的阈值和力度:
+    MEAN_REVERSION_PARAMS = {
+        "long_term_bond":      (15, 0.40),  # 阈值15%, 每超1%→罚0.40/超出量
+        "intermediate_bond":   (15, 0.25),
+        "commodity":           (20, 0.30),
+        "em_bond":             (15, 0.30),
+        "equity_cyclical":     (30, 0.15),  # 股票阈值高、力度小（惯性强）
+        "gold":                (30, 0.10),  # 黄金几乎不回归
+        "inflation_linked_bond": (20, 0.20),
+    }
+    REBOUND_PARAMS = {
+        "long_term_bond":      (-15, 0.30),  # 前年跌>15% → 加分
+        "equity_cyclical":     (-25, 0.40),  # 股票超跌反弹强
+        "commodity":           (-20, 0.25),
+        "gold":                (-20, 0.20),
+        "em_bond":             (-15, 0.30),
+    }
+
     if macro is not None and macro.prior_returns:
         for asset_type, prior_ret in macro.prior_returns.items():
             if asset_type not in all_scores:
                 continue
-            # 去年涨超 25% → 今年减分（均值回归）
-            if prior_ret > 25:
-                reversion_penalty = -(prior_ret - 25) / 50  # 35%→-0.2, 50%→-0.5
+
+            # 均值回归（前年涨太多→减分）
+            params = MEAN_REVERSION_PARAMS.get(asset_type)
+            if params and prior_ret > params[0]:
+                excess = prior_ret - params[0]
+                penalty = -excess * params[1] / 20  # 归一化
                 old_score, old_paths = all_scores[asset_type]
                 all_scores[asset_type] = (
-                    old_score + reversion_penalty,
-                    old_paths + [f"均值回归{reversion_penalty:+.2f}(去年{prior_ret:+.0f}%)"]
+                    old_score + penalty,
+                    old_paths + [f"均值回归{penalty:+.2f}(去年{prior_ret:+.0f}%>{params[0]})"]
                 )
-            # 去年跌超 20% → 今年加分（超跌反弹）
-            elif prior_ret < -20:
-                rebound_bonus = -prior_ret / 100  # -30%→+0.3, -50%→+0.5
+
+            # 超跌反弹（前年跌太多→加分）
+            rb_params = REBOUND_PARAMS.get(asset_type)
+            if rb_params and prior_ret < rb_params[0]:
+                excess = rb_params[0] - prior_ret
+                bonus = excess * rb_params[1] / 20
                 old_score, old_paths = all_scores[asset_type]
                 all_scores[asset_type] = (
-                    old_score + rebound_bonus,
-                    old_paths + [f"超跌反弹{rebound_bonus:+.2f}(去年{prior_ret:+.0f}%)"]
+                    old_score + bonus,
+                    old_paths + [f"超跌反弹{bonus:+.2f}(去年{prior_ret:+.0f}%)"]
                 )
 
     # ── 债券收益/风险不对称惩罚 ──
