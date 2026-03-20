@@ -38,10 +38,12 @@ from anchor.extract.pipelines._mapreduce import (
 
 # 10-K 章节分隔标记（宽松匹配）
 _SECTION_PATTERNS = [
-    (r"(?i)\bitem\s*1[.\s]*[-—]?\s*business\b", "business"),
-    (r"(?i)\bitem\s*1a[.\s]*[-—]?\s*risk\s*factors\b", "risk_factors"),
-    (r"(?i)\bitem\s*7[.\s]*[-—]?\s*management.{0,20}discussion\b", "mda"),
-    (r"(?i)\bitem\s*8[.\s]*[-—]?\s*financial\s*statements\b", "financials"),
+    # "Item 1. Business" 或 "Items 1 and 2. Business and Properties"（油企常见写法）
+    # 用 [\s\S]{0,50} 跨行匹配（有些 10-K 在 Item 号和标题之间插入换行/bullet）
+    (r"(?i)\bitems?\s*1\s*(?:and\s*2)?[\s\S]{0,50}?business\b", "business"),
+    (r"(?i)\bitem\s*1a[\s\S]{0,30}?risk\s*factors\b", "risk_factors"),
+    (r"(?i)\bitem\s*7[\s\S]{0,30}?management[\s\S]{0,20}?discussion\b", "mda"),
+    (r"(?i)\bitem\s*8[\s\S]{0,30}?financial\s*statements\b", "financials"),
     (r"(?i)\bitem\s*1[0-4]\b", "governance"),  # Part III 合并
 ]
 
@@ -55,10 +57,32 @@ def chunk_10k(content: str) -> list[ChunkMeta]:
         for m in re.finditer(pattern, content):
             positions.append((m.start(), section_name))
 
+    # 过滤噪声匹配
+    if len(positions) > 2:
+        positions.sort(key=lambda x: x[0])
+        filtered = []
+        for i, (start, name) in enumerate(positions):
+            next_start = positions[i + 1][0] if i + 1 < len(positions) else len(content)
+            gap = next_start - start
+
+            # 1) 目录页：多个 marker 密集聚集（间距 < 500 chars）
+            if gap < 500:
+                continue
+
+            # 2) 交叉引用："Items 1 and 2. Business...of this report"
+            #    正文 section 标题后面不会紧跟 "of this report"
+            after = content[start:start + 200]
+            if re.search(r"of\s+this\s+report", after, re.IGNORECASE):
+                continue
+
+            filtered.append((start, name))
+        if len(filtered) >= 2:
+            positions = filtered
+
     if len(positions) < 2:
         # 无法识别章节，按长度切
         logger.warning("[10-K] 无法识别章节标记，按长度切分")
-        max_chunk = 60000
+        max_chunk = 40000
         if len(content) <= max_chunk:
             return [ChunkMeta("full", content, "business")]
         chunks = []
@@ -70,19 +94,25 @@ def chunk_10k(content: str) -> list[ChunkMeta]:
     # 按位置排序
     positions.sort(key=lambda x: x[0])
 
-    # 切分
+    # 切分（超长段递归拆分，保证每段 ≤ max_chunk_chars）
+    max_chunk_chars = 40000  # 清理装饰字符后 40K chars ≈ 10-15K token
     chunks = []
     for i, (start, name) in enumerate(positions):
         end = positions[i + 1][0] if i + 1 < len(positions) else len(content)
         text = content[start:end].strip()
-        if len(text) > 200:  # 太短的段跳过
-            # 如果单段太长，再切一刀
-            if len(text) > 80000:
-                mid = len(text) // 2
-                chunks.append(ChunkMeta(f"{name}_1", text[:mid], name))
-                chunks.append(ChunkMeta(f"{name}_2", text[mid:], name))
-            else:
-                chunks.append(ChunkMeta(name, text, name))
+        if len(text) <= 200:  # 太短的段跳过
+            continue
+        if len(text) <= max_chunk_chars:
+            chunks.append(ChunkMeta(name, text, name))
+        else:
+            # 递归拆分成 ≤ max_chunk_chars 的段
+            n_parts = (len(text) + max_chunk_chars - 1) // max_chunk_chars
+            part_size = len(text) // n_parts
+            for j in range(n_parts):
+                s = j * part_size
+                e = (j + 1) * part_size if j < n_parts - 1 else len(text)
+                suffix = f"_{j+1}" if n_parts > 1 else ""
+                chunks.append(ChunkMeta(f"{name}{suffix}", text[s:e], name))
 
     if not chunks:
         chunks = [ChunkMeta("full", content[:80000], "business")]
@@ -134,9 +164,13 @@ SECTION_PROMPTS = {
 
 ## 提取规则
 - customer_name: 优先用业务线名称（如 "Cloud Services"），不是具体公司名
+- 如果文档没有明确的 segment reporting，从业务描述中推断主要业务线。宁可粗略也不要返回空。常见推断策略：
+  - 综合油企：按价值链拆（Upstream / Downstream / Chemicals / Midstream）
+  - 纯上游 E&P：按地理区域拆（如 "U.S. Operations"、"Egypt Operations"、"North Sea"）
+  - 多元化集团：按业务类型拆
 - product_category: 必须从给定列表中选择，这是生意画像的关键输入
 - segment_gross_margin: 如果文档提到该业务线的毛利率则填，否则 null
-- revenue_pct: 估算各业务线占总收入百分比，用小数（0.40 = 40%）
+- revenue_pct: 估算各业务线占总收入百分比，用小数（0.40 = 40%）。没有明确数据时可填 null，但必须输出业务线
 """,
 
     "risk_factors": _BASE + """

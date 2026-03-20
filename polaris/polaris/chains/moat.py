@@ -701,50 +701,56 @@ def _check_cost_advantage(ctx: ComputeContext, pt: PricingTestResult) -> MoatCat
                 if sgm is not None and name:
                     seg_margins[name] = (sgm, pct)
 
+        # ── 分业务线对比: 和最强竞对比，不是平均 ──
+        # 护城河是"能不能打赢最强的"，不是"比平均好就行"
         segments = peers["segment"].dropna().unique()
         seg_wins = 0
         seg_losses = 0
         for seg in segments:
             seg_peers = peers[peers["segment"] == seg]
-            seg_gm_peers = seg_peers[seg_peers["metric"] == "gross_margin"]["value"].dropna()
+            seg_gm_peers = seg_peers[seg_peers["metric"] == "gross_margin"]
             if seg_gm_peers.empty:
                 continue
-            peer_avg = seg_gm_peers.mean()
-            peer_names = list(dict.fromkeys(
-                seg_peers[seg_peers["metric"] == "gross_margin"]["peer_name"].tolist()))
 
-            # 用该业务线自己的毛利率
+            # 找最强竞对（该指标最高的那个）
+            best_idx = seg_gm_peers["value"].idxmax()
+            best_val = seg_gm_peers.loc[best_idx, "value"]
+            best_name = seg_gm_peers.loc[best_idx, "peer_name"]
+            all_names = list(dict.fromkeys(seg_gm_peers["peer_name"].tolist()))
+
             my_val = seg_margins.get(seg, (None, 0))[0] if seg in seg_margins else None
             pct = seg_margins.get(seg, (0, 0))[1] if seg in seg_margins else 0
 
             if my_val is None:
                 continue
 
-            diff = my_val - peer_avg
+            diff = my_val - best_val
             if diff > 0.03:
+                # 比最强竞对还高 → 真护城河
                 peer_cmp.evidence.append(_ev("peer_financials",
-                    f"[{seg} {pct:.0%}] 毛利率 {my_val:.1%} vs 同行 {peer_avg:.1%}"
-                    f"（+{diff:.1%}，{', '.join(peer_names)}）",
+                    f"[{seg} {pct:.0%}] 毛利率 {my_val:.1%} vs 最强竞对 {best_name} {best_val:.1%}"
+                    f"（+{diff:.1%}）",
                     True, EvidenceStrength.STRUCTURAL))
                 seg_wins += 1
             elif diff < -0.03:
                 peer_cmp.evidence.append(_ev("peer_financials",
-                    f"[{seg} {pct:.0%}] 毛利率 {my_val:.1%} vs 同行 {peer_avg:.1%}"
-                    f"（{diff:+.1%}，{', '.join(peer_names)}）",
+                    f"[{seg} {pct:.0%}] 毛利率 {my_val:.1%} vs 最强竞对 {best_name} {best_val:.1%}"
+                    f"（{diff:+.1%}）",
                     False, EvidenceStrength.STRUCTURAL))
                 seg_losses += 1
             else:
                 peer_cmp.evidence.append(_ev("peer_financials",
-                    f"[{seg} {pct:.0%}] 毛利率 {my_val:.1%} vs 同行 {peer_avg:.1%}（持平）",
+                    f"[{seg} {pct:.0%}] 毛利率 {my_val:.1%} vs 最强竞对 {best_name} {best_val:.1%}"
+                    f"（持平）",
                     None, EvidenceStrength.STRUCTURAL))
 
         if seg_wins > seg_losses:
             peer_cmp.detected = True
-            peer_cmp.detail = f"分业务线对比: {seg_wins} 个领先，{seg_losses} 个落后"
+            peer_cmp.detail = f"分业务线 vs 最强竞对: {seg_wins} 个领先，{seg_losses} 个落后"
         elif seg_losses > 0:
-            peer_cmp.detail = f"分业务线对比: {seg_wins} 个领先，{seg_losses} 个落后"
+            peer_cmp.detail = f"分业务线 vs 最强竞对: {seg_wins} 个领先，{seg_losses} 个落后"
     elif not peers.empty and "metric" in peers.columns:
-        # ── 整体对比（向后兼容）──
+        # ── 整体对比（无 segment 数据时）: 每个指标比最强竞对 ──
         gm = _feat(ctx, "gross_margin")
         op_margin = _feat(ctx, "operating_margin")
         nm = _feat(ctx, "net_margin")
@@ -755,26 +761,28 @@ def _check_cost_advantage(ctx: ComputeContext, pt: PricingTestResult) -> MoatCat
         ]:
             if my_val is None:
                 continue
-            peer_vals = peers[peers["metric"] == metric_name]["value"].dropna()
+            metric_peers = peers[peers["metric"] == metric_name]
+            peer_vals = metric_peers["value"].dropna()
             if peer_vals.empty:
                 continue
-            peer_avg = peer_vals.mean()
-            diff = my_val - peer_avg
-            peer_names = list(dict.fromkeys(
-                peers[peers["metric"] == metric_name]["peer_name"].tolist()))
+            # 找最强竞对
+            best_idx = peer_vals.idxmax()
+            best_val = peer_vals.loc[best_idx]
+            best_name = metric_peers.loc[best_idx, "peer_name"]
+            diff = my_val - best_val
             if diff > 0.03:
                 peer_cmp.evidence.append(_ev("peer_financials",
-                    f"{label}: 本公司 {my_val:.1%} vs 同行 {peer_avg:.1%}"
-                    f"（+{diff:.1%}，{', '.join(peer_names)}）",
+                    f"{label}: 本公司 {my_val:.1%} vs 最强竞对 {best_name} {best_val:.1%}"
+                    f"（+{diff:.1%}）",
                     True, EvidenceStrength.STRUCTURAL))
             elif diff < -0.03:
                 peer_cmp.evidence.append(_ev("peer_financials",
-                    f"{label}: 本公司 {my_val:.1%} vs 同行 {peer_avg:.1%}"
-                    f"（{diff:+.1%}，{', '.join(peer_names)}）",
+                    f"{label}: 本公司 {my_val:.1%} vs 最强竞对 {best_name} {best_val:.1%}"
+                    f"（{diff:+.1%}）",
                     False, EvidenceStrength.STRUCTURAL))
         if any(e.supports is True for e in peer_cmp.evidence):
             peer_cmp.detected = True
-            peer_cmp.detail = "利润率显著高于同行"
+            peer_cmp.detail = "利润率高于最强竞对"
     else:
         _no_data(peer_cmp, "peer_financials", "同行对比")
     cat.subtypes.append(peer_cmp)

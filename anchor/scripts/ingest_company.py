@@ -84,12 +84,16 @@ async def ingest_company(ticker: str, forms: list[str] | None = None):
         rows = sum(table_summary.values())
         logger.info(f"  提取: {extract_time:.0f}s | {rows} 行 | {table_summary}")
 
-        if rows == 0:
-            continue
-
-        # 写入 DB
+        # 写入 DB（即使 0 行也要建 CompanyProfile，保证断点续传能识别已处理的公司）
         from anchor.database.session import AsyncSessionLocal
+        from anchor.extract.pipelines._writer import get_or_create_company
         async with AsyncSessionLocal() as session:
+            if rows == 0:
+                await get_or_create_company(session, ticker, name=c.name, market="us")
+                await session.commit()
+                logger.warning(f"  {ticker} 提取 0 行，仅建档")
+                continue
+
             stats = await write_extraction_result(
                 session, result,
                 market="us",

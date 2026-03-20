@@ -9,9 +9,26 @@
 
 from __future__ import annotations
 
+import re
+
 from loguru import logger
 
 from anchor.extract.pipelines._mapreduce import ExtractionResult
+
+
+def _clean_sec_text(content: str) -> str:
+    """清理 SEC EDGAR document.text() 的装饰字符。
+
+    EDGAR 输出包含大量 box-drawing 字符（│╰─ 等），这些字符
+    在 LLM tokenizer 中占大量 token 但无信息量，会导致有效内容被截断。
+    """
+    # 移除 box-drawing / 装饰字符
+    content = re.sub(r"[│╰╯╭╮─┌┐└┘├┤┬┴┼═║╔╗╚╝╠╣╦╩╬▪▫●○◦■□▶►▷▹◆◇★☆]+", "", content)
+    # 压缩多余空格（保留换行结构）
+    content = re.sub(r"[ \t]{3,}", "  ", content)
+    # 压缩多余空行
+    content = re.sub(r"\n{3,}", "\n\n", content)
+    return content
 
 
 async def extract_document(
@@ -32,6 +49,7 @@ async def extract_document(
       - investor_day: 投资者日（预留）
     """
     metadata = metadata or {}
+    content = _clean_sec_text(content)
 
     if doc_type == "annual_report":
         from anchor.extract.pipelines.annual_report import extract_annual_report

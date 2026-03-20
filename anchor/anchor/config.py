@@ -1,4 +1,17 @@
+from pathlib import Path
+
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# 确保 .env 在 Settings() 创建前加载到 os.environ
+# pydantic-settings 的 env_file 是相对于 cwd 的，可能找不到；
+# 向上搜索直到找到 .env
+_here = Path(__file__).resolve().parent
+for _dir in [Path.cwd(), _here, _here.parent, _here.parent.parent]:
+    _candidate = _dir / ".env"
+    if _candidate.is_file():
+        load_dotenv(_candidate, override=False)
+        break
 
 
 class Settings(BaseSettings):

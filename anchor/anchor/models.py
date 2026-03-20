@@ -7,7 +7,7 @@ Anchor 核心数据模型
 公司模型（巴菲特标准）：
   CompanyProfile / CompanyNarrative / OperationalIssue
   FinancialStatement / FinancialLineItem
-  DownstreamSegment / UpstreamSegment / GeographicRevenue
+  DownstreamSegment / UpstreamSegment / GeographicRevenue / IndustryMember
   NonFinancialKPI / DebtObligation / Litigation
   ExecutiveCompensation / StockOwnership / RelatedPartyTransaction
 
@@ -902,6 +902,27 @@ class CompetitiveDynamic(SQLModel, table=True):
         default=None, foreign_key="raw_posts.id", index=True
     )
     created_at: datetime = Field(default_factory=_utcnow)
+
+
+class IndustryMember(SQLModel, table=True):
+    """行业-公司映射 — 竞对全量刷新的基础
+
+    一家公司可多行（多业务线 → 多行业）。
+    status 流转: suggested → confirmed → removed
+    Anchor 全量刷新只看 confirmed 的行。
+    """
+
+    __tablename__ = "industry_members"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    company_id: int = Field(foreign_key="company_profiles.id", index=True)
+    segment: str                                   # 业务线名（如 "输变电设备"）
+    industry: str = Field(index=True)              # 行业标签（如 "电力设备"）
+    revenue_pct: Optional[float] = None            # 该业务线占总收入比例
+    status: str = Field(default="suggested", index=True)  # suggested|confirmed|removed
+    suggested_at: datetime = Field(default_factory=_utcnow)
+    confirmed_at: Optional[datetime] = None
+    source: Optional[str] = None                   # 数据来源（"10-K FY2025" / "用户手动"）
 
 
 class PeerFinancial(SQLModel, table=True):
