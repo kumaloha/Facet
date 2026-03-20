@@ -35,6 +35,12 @@ _FORCE1_SERIES = {
     ("NFCILEVERAGE", "financial_leverage", "direct"),    # 芝加哥联储杠杆子指数
     ("DRTSCILM", "lending_standards", "direct"),         # 贷款标准收紧%
     ("HDTGPDUSQ163N", "household_debt_gdp", "direct"),  # 家庭债务/GDP %
+    # 央行资产负债表 (QE/QT = 过去15年最大的流动性力量)
+    ("WALCL", "fed_balance_sheet", "direct"),            # Fed 总资产 (百万$)
+    ("WALCL", "fed_bs_yoy", "yoy_level"),               # Fed 资产同比% (QE→正, QT→负)
+    # 影子银行代理信号
+    ("SOFR", "sofr_rate", "direct"),                     # 担保隔夜融资利率 (影子银行融资成本)
+    ("RRPONTSYD", "reverse_repo", "direct"),             # 逆回购余额 (十亿$, 流动性方向)
 }
 
 # Force 2: 内部秩序
@@ -45,6 +51,9 @@ _FORCE2_SERIES = {
     ("OPHNFB", "nonfarm_productivity_growth", "yoy_index"),  # 非农生产率 → 同比%
     ("FYFSGDA188S", "fiscal_deficit_to_gdp", "abs"),     # 联邦赤字/GDP (取绝对值)
     ("MEHOINUSA672N", "real_median_income", "direct"),    # 实际中位收入
+    # 劳动力微观 (领先就业指标)
+    ("JTSJOL", "jolts_openings", "direct"),              # 职位空缺数 (千)
+    ("JTSQUR", "jolts_quits_rate", "direct"),            # 离职率 % (员工信心=领先消费)
 }
 
 # Force 3: 外部秩序
@@ -65,6 +74,19 @@ _FORCE5_SERIES = {
     ("OPHNFB", "productivity_growth", "yoy_index"),        # 非农生产率 → 同比%
     ("Y694RC1Q027SBEA", "rd_spending_growth", "yoy_index"), # R&D支出 → 同比%
     ("NASDAQCOM", "nasdaq_yoy", "yoy_index"),              # NASDAQ综合 → 同比% (科技板块代理)
+}
+
+# ── 索罗斯: 衍生品 + 市场信念信号 (跨 Force, 单独分组) ──
+_SOROS_SERIES = {
+    ("VIXCLS", "vix", "direct"),                           # VIX (日度)
+    ("VXVCLS", "vix_3m", "direct"),                        # VIX 3个月 (期限结构用)
+    ("SKEWCLS", "skew_index", "direct"),                    # CBOE SKEW (尾部保护需求, 日度)
+    ("BAMLC0A0CM", "credit_spread_ig", "direct"),          # 投资级信用利差
+    ("BAMLH0A0HYM2", "credit_spread_hy", "direct"),       # 高收益信用利差
+    ("T5YIE", "breakeven_5y", "direct"),                   # 5年通胀预期
+    ("T10YIE", "breakeven_10y", "direct"),                 # 10年通胀预期
+    # 人口 (大周期结构参数)
+    ("LFWA64TTUSM647S", "working_age_pop", "yoy_level"),   # 劳动年龄人口同比% (极慢)
 }
 
 
@@ -154,6 +176,7 @@ def fetch_five_forces_from_fred(api_key: str | None = None) -> dict[str, dict]:
         (3, _FORCE3_SERIES),
         (4, _FORCE4_SERIES),
         (5, _FORCE5_SERIES),
+        ("soros", _SOROS_SERIES),
     ]
     all_series_ids = set()
     for _, mappings in all_mappings:
@@ -173,8 +196,9 @@ def fetch_five_forces_from_fred(api_key: str | None = None) -> dict[str, dict]:
             val = _apply_transform(raw.get(sid), transform)
             if val is not None:
                 d[key] = round(val, 2)
-        result[f"force{force_id}"] = d
-        logger.info(f"[FRED] Force {force_id}: {len(d)} indicators")
+        group_key = f"force{force_id}" if isinstance(force_id, int) else str(force_id)
+        result[group_key] = d
+        logger.info(f"[FRED] {group_key}: {len(d)} indicators")
 
     return result
 

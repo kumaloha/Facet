@@ -230,6 +230,39 @@ def assess_force1_debt_cycle(macro_data: dict) -> ForceAssessment:
         f.system_highlights.append(
             "注: 缺少结构性数据(逾期率/杠杆/贷款标准)——仅靠总量判断，信心有限")
 
+    # ── 央行资产负债表 (过去15年最大的流动性力量) ──
+    fed_bs_yoy = d.get("fed_bs_yoy")
+    if fed_bs_yoy is not None:
+        f.indicators.append(Indicator(
+            name="Fed资产负债表同比", value=fed_bs_yoy, unit="%",
+            context="正=QE(印钱), 负=QT(缩表). >20%=大规模QE, <-5%=积极缩表"))
+        if fed_bs_yoy > 10:
+            f.system_highlights.append(f"⚠ Fed 资产同比+{fed_bs_yoy:.0f}% — 大规模QE, 流动性泛滥")
+        elif fed_bs_yoy < -3:
+            f.system_highlights.append(f"⚠ Fed 资产同比{fed_bs_yoy:.1f}% — 缩表中, 流动性在收紧")
+
+    # ── 影子银行背离: 贷款标准紧+利差窄 = 最危险信号 ──
+    # 银行收紧但影子银行在补位 → 隐性杠杆堆积 (2006-2007 经典模式)
+    if lending_std is not None and lending_std > 10:
+        hy_spread = d.get("credit_spread_hy")
+        if hy_spread is not None and hy_spread < 4:
+            f.system_contradictions.append(
+                f"影子银行背离: 银行贷款标准收紧({lending_std:.0f}%)但高收益利差仅{hy_spread:.1f}%偏窄 — "
+                "有人在银行体系之外放贷, 隐性杠杆在堆积 (2006-2007经典模式)")
+
+    # ── SOFR-FEDFUNDS 利差 (回购市场压力) ──
+    sofr = d.get("sofr_rate")
+    ff = d.get("fed_funds_rate")
+    if sofr is not None and ff is not None:
+        sofr_spread = sofr - ff
+        if abs(sofr_spread) > 0.15:
+            f.indicators.append(Indicator(
+                name="SOFR-联邦基金利差", value=round(sofr_spread, 2), unit="%",
+                context=">0.1=回购市场紧张(影子银行融资困难). 2019.9曾飙至3%"))
+            if sofr_spread > 0.2:
+                f.system_highlights.append(
+                    f"⚠ SOFR利差+{sofr_spread:.2f}% — 回购市场紧张, 影子银行融资成本上升")
+
     return f
 
 
@@ -312,6 +345,22 @@ def assess_force2_internal_order(data: dict | None = None) -> ForceAssessment:
             context="<60=悲观(历史低位), 60-80=中性, >80=乐观. 2007≈90, 2008→55, 2022→50"))
         if consumer_sent < 60:
             signals.append(f"消费者信心{consumer_sent}(极度悲观)")
+
+    # JOLTS 劳动力微观 (领先就业指标)
+    jolts_quits = d.get("jolts_quits_rate")
+    if jolts_quits is not None:
+        f.indicators.append(Indicator(
+            name="离职率(JOLTS)", value=jolts_quits, unit="%",
+            trend="deteriorating" if jolts_quits < 2.0 else "stable",
+            context="员工信心指标. >2.5%=敢跳槽(劳动力紧). <1.8%=不敢动(就业弱). 2022峰值3%"))
+        if jolts_quits < 1.8:
+            signals.append(f"离职率{jolts_quits}%(员工不敢跳槽=信心低)")
+
+    jolts_openings = d.get("jolts_openings")
+    if jolts_openings is not None:
+        f.indicators.append(Indicator(
+            name="职位空缺(JOLTS)", value=jolts_openings, unit="千",
+            context="<7000千=劳动力市场降温, >10000千=极度紧张. 2022峰值12000"))
 
     # 实际工资 vs 生产率
     wage = d.get("real_weekly_earnings_growth")
