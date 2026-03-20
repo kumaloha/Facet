@@ -1162,6 +1162,16 @@ def _compute_consumer_health(
         weights.append(0.7)
         inputs_used.append(f"inflation_erosion={inflation_erosion:+.2f}")
 
+    # GDP 动量前瞻传导: GDP 改善领先就业改善 2-3 个季度
+    # 达利欧: "看二阶导数——GDP 跌幅收窄意味着消费者即将改善"
+    gdp_m = macro.gdp_momentum
+    if gdp_m is not None and abs(gdp_m) > 1.0:
+        # GDP 动量强（>1pp）时对消费者有前瞻性影响
+        gdp_forward = gdp_m / 4.0  # +4.7pp → +1.2（强正向信号）
+        components.append(gdp_forward)
+        weights.append(0.8)  # 权重跟失业率相当——二阶导数跟水平一样重要
+        inputs_used.append(f"gdp_momentum_forward={gdp_forward:+.2f}")
+
     # 上游传导
     components.append(debt_service.value * debt_service.confidence)
     weights.append(0.7)
@@ -1172,7 +1182,7 @@ def _compute_consumer_health(
     inputs_used.append(f"credit_avail={credit_avail.value:+.2f}")
 
     value = _weighted_tanh(components, weights)
-    n_avail = sum(1 for x in [unemp, unemp_d] if x is not None) + 2  # 上游节点总是可用
+    n_avail = sum(1 for x in [unemp, unemp_d, gdp_m] if x is not None) + 2
     confidence = _node_confidence(n_avail, n_total)
     detail = f"消费者健康 {value:+.3f}"
 
@@ -1672,9 +1682,22 @@ def _compute_asset_impacts(
         score = max(-1.0, min(1.0, score))
         all_scores[asset_type] = (score, paths)
 
+    # ── 二阶导数奖励: 经济从衰退中加速恢复时从防守转进攻 ──
+    # 达利欧: "看二阶导数——跌幅收窄且加速 = 该买进攻型了"
+    # 条件: GDP 仍为负或低增长 + 但动量强正（从坑里往上爬）
+    if (macro is not None
+        and macro.gdp_momentum is not None and macro.gdp_momentum > 2.0
+        and macro.gdp_growth_actual is not None and macro.gdp_growth_actual < 1.5):
+        # 经济仍差但在快速改善 = 触底反弹信号
+        momentum_bonus = min(macro.gdp_momentum / 10.0, 0.3)
+        if "equity_cyclical" in all_scores:
+            old_score, old_paths = all_scores["equity_cyclical"]
+            all_scores["equity_cyclical"] = (old_score + momentum_bonus, old_paths + [f"二阶导数奖励+{momentum_bonus:.2f}"])
+        if "equity_defensive" in all_scores:
+            old_score, old_paths = all_scores["equity_defensive"]
+            all_scores["equity_defensive"] = (old_score - momentum_bonus * 0.5, old_paths)
+
     # ── 分组相对排名 ──
-    # 风险资产和避险资产分开排名，不互相抢位置
-    # 达利欧: 每个环境都有该超配和该低配的资产，不是全局排序
     RISK_GROUP = {"equity_cyclical", "equity_defensive", "commodity"}
     SAFE_GROUP = {"nominal_bond", "gold", "cash", "inflation_linked_bond"}
 
