@@ -1493,16 +1493,22 @@ def main():
     print(f"{'=' * 70}")
 
     # 按经济体分组统计
-    groups = {"US": [], "JP": [], "EU": [], "CN": []}
+    groups = {"US": [], "JP": [], "EU": [], "CN": [], "BR": [], "TR": [], "IN": []}
     for name, score, total, q_ok in results:
         prefix = name[:2]
         if prefix in groups:
             groups[prefix].append((name, score, total, q_ok))
 
+    region_names = {
+        "US": "美国", "JP": "日本", "EU": "欧洲", "CN": "中国",
+        "BR": "巴西", "TR": "土耳其", "IN": "印度",
+    }
     for region, items in groups.items():
+        if not items:
+            continue
         region_score = sum(s for _, s, _, _ in items)
         region_total = sum(t for _, _, t, _ in items)
-        region_name = {"US": "美国", "JP": "日本", "EU": "欧洲", "CN": "中国"}[region]
+        region_name = region_names[region]
         print(f"\n  --- {region_name} ---")
         for name, score, total, q_ok in items:
             marker = "O" if q_ok == "O" else "X"
