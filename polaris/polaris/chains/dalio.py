@@ -160,6 +160,21 @@ class MacroContext:
 
     # 就业
     unemployment_rate: float | None = None        # 失业率 (%)
+    initial_claims: float | None = None           # 初次申请失业金人数 (千)
+
+    # 实体经济高频
+    pmi_manufacturing: float | None = None        # 制造业 PMI (50=荣枯线)
+    pmi_services: float | None = None             # 服务业 PMI
+    retail_sales_growth: float | None = None      # 零售销售同比 (%)
+    housing_starts_growth: float | None = None    # 新屋开工同比 (%)
+    industrial_production_growth: float | None = None  # 工业产出同比 (%)
+
+    # 企业盈利
+    earnings_growth: float | None = None          # S&P 500 EPS 同比增速 (%)
+    earnings_revision: float | None = None        # 盈利修正比 (上修-下修)/(总数), -1到+1
+
+    # 流动性
+    m2_growth: float | None = None                # M2 货币供应同比增速 (%)
 
     # 政策空间
     fiscal_deficit_to_gdp: float | None = None    # 财政赤字/GDP (%)
@@ -1046,8 +1061,15 @@ def _compute_credit_availability(macro: MacroContext) -> MechanismNode:
         weights.append(0.8)
         inputs_used.append(f"rate_dir={rate_d:+.2f}")
 
+    # M2 货币供应: 流动性的直接度量
+    if macro.m2_growth is not None:
+        m2_signal = (macro.m2_growth - 5.0) / 8.0  # 5%=中性, 13%=+1(QE), -3%=-1(紧缩)
+        components.append(m2_signal)
+        weights.append(0.6)
+        inputs_used.append(f"m2={macro.m2_growth:+.1f}%")
+
     value = _weighted_tanh(components, weights)
-    confidence = _node_confidence(len(components), n_total)
+    confidence = _node_confidence(len(components), n_total + 1)
     detail = f"信贷可得性 {value:+.3f}"
 
     return MechanismNode(
@@ -1153,6 +1175,21 @@ def _compute_consumer_health(
         weights.append(0.8)
         inputs_used.append(f"unemp_dir={unemp_d:+.2f}")
 
+    # 初次申请失业金: 比失业率更高频的劳动力信号
+    if macro.initial_claims is not None:
+        # 200k=健康, 300k=紧张, 400k+=危机
+        claims_signal = -(macro.initial_claims - 250) / 150
+        components.append(claims_signal)
+        weights.append(0.6)
+        inputs_used.append(f"claims={macro.initial_claims:.0f}k")
+
+    # 零售销售: 直接反映消费支出
+    if macro.retail_sales_growth is not None:
+        retail_signal = macro.retail_sales_growth / 5.0
+        components.append(retail_signal)
+        weights.append(0.5)
+        inputs_used.append(f"retail={macro.retail_sales_growth:+.1f}%")
+
     # 通胀侵蚀: 高通胀削弱真实购买力（即使失业率低）
     cpi = macro.cpi_actual
     cpi_target = macro.cpi_expected if macro.cpi_expected is not None else 2.0
@@ -1220,6 +1257,33 @@ def _compute_corporate_health(
         components.append(gdp_m / 2.0)
         weights.append(0.8)
         inputs_used.append(f"gdp_momentum={gdp_m:+.2f}")
+
+    # PMI: 实时经济活动（比 GDP 快 1-2 个月）
+    if macro.pmi_manufacturing is not None:
+        pmi_signal = (macro.pmi_manufacturing - 50) / 10  # 50=中性, 60=+1, 40=-1
+        components.append(pmi_signal)
+        weights.append(0.7)
+        inputs_used.append(f"pmi_mfg={macro.pmi_manufacturing:.0f}")
+
+    # 盈利增速: 最直接的企业健康指标
+    if macro.earnings_growth is not None:
+        eg_signal = macro.earnings_growth / 15.0  # +15%→+1, -15%→-1
+        components.append(eg_signal)
+        weights.append(0.8)
+        inputs_used.append(f"earnings={macro.earnings_growth:+.0f}%")
+
+    # 盈利修正: 分析师在上修还是下修（领先指标）
+    if macro.earnings_revision is not None:
+        components.append(macro.earnings_revision)  # 已经是 -1 到 +1
+        weights.append(0.5)
+        inputs_used.append(f"revision={macro.earnings_revision:+.2f}")
+
+    # 工业产出: 制造业实际产出
+    if macro.industrial_production_growth is not None:
+        ip_signal = macro.industrial_production_growth / 5.0
+        components.append(ip_signal)
+        weights.append(0.4)
+        inputs_used.append(f"ind_prod={macro.industrial_production_growth:+.1f}%")
 
     # 上游传导
     components.append(consumer.value * consumer.confidence)
@@ -1341,6 +1405,7 @@ def _apply_data_triangulation(macro: MacroContext) -> MacroContext:
     3. 广义信贷 > 银行信贷 — 含影子银行/表外
     4. 房地产是新兴市场的放大器 — 崩盘时拖累远超 GDP 反映
     5. 多指标综合判断 — 不依赖任何单一指标
+    6. 悲观偏差 — 指标矛盾时偏向悲观方（政府有动机隐瞒坏消息，美国非农也改）
     """
     # 目前只对标记了替代数据的场景启用
     has_alt = any(v is not None for v in (
@@ -1373,8 +1438,9 @@ def _apply_data_triangulation(macro: MacroContext) -> MacroContext:
 
         gap = official_gdp - activity_index
         if abs(gap) > 2.0:
-            # 官方 GDP 向真实活动靠拢（不完全替换，混合）
-            corrected = official_gdp - gap * 0.5
+            # 悲观偏差: 官方 GDP 向替代数据靠拢 60%（而不是 50%）
+            # 因为政府有动机高报 GDP，替代数据更可能接近真实
+            corrected = official_gdp - gap * 0.6
             sources = ", ".join(f"{n}{v:+.0f}%" for n, v, _ in activity_components)
             corrections.append(f"GDP: 官方{official_gdp:.1f}% vs 活动指数{activity_index:.1f}% ({sources}) → {corrected:.1f}%")
             macro.gdp_growth_actual = corrected

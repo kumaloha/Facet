@@ -220,6 +220,13 @@ FRED_SERIES: dict[str, str] = {
     "household_debt_to_income": "TDSP",    # 家庭债务偿付比/可支配收入 (季度, %)
     "corporate_debt_to_gdp": "BCNSDODNS",  # 非金融企业债务 (季度, 十亿$ → 需除以 GDP)
     "government_debt_to_gdp": "GFDEGDQ188S",  # 同 total（联邦债务/GDP）
+    # 高频实体经济
+    "initial_claims": "ICSA",             # 初次申请失业金 (周度, 人)
+    "pmi_manufacturing": "MANEMP",        # ISM 制造业 PMI (月度, 近似用就业分项)
+    "retail_sales_yoy": "RSAFS",          # 零售销售 (月度, 百万$ → 需算 YoY)
+    "industrial_production": "INDPRO",    # 工业产出指数 (月度, 指数 → 需算 YoY)
+    "housing_starts": "HOUST",            # 新屋开工 (月度, 千)
+    "m2_growth": "M2SL",                  # M2 货币供应 (月度, 十亿$ → 需算 YoY)
     # 市场隐含预期（索罗斯链需要）
     "breakeven_inflation_5y": "T5YIE",     # 5 年期 breakeven 通胀率 (日度, %)
     "breakeven_inflation_10y": "T10YIE",   # 10 年期 breakeven 通胀率 (日度, %)
@@ -374,6 +381,15 @@ async def update_fred_indicators(
         # 财政赤字: 原始是负数表示赤字，取绝对值
         if indicator == "fiscal_deficit_to_gdp":
             series = series.abs()
+
+        # 零售销售/工业产出/M2: 原始是指数或总量，需算 YoY
+        if indicator in ("retail_sales_yoy", "industrial_production", "m2_growth"):
+            series = series.pct_change(periods=12) * 100
+            series = series.dropna()
+
+        # 初次申请: 原始单位是人，转为千人
+        if indicator == "initial_claims":
+            series = series / 1000
 
         # 只取最近 days 天
         cutoff = date.today() - timedelta(days=days)

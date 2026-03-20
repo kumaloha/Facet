@@ -39,6 +39,8 @@ def build_portfolio(
     all_weather_weights: dict[str, float],
     dalio_tilts: list | None = None,
     soros_opportunities: list | None = None,
+    leverage: float = 1.0,
+    allow_short: bool = False,
     max_offset_ratio: float = 0.5,
     max_single_weight: float = 0.50,
     min_single_weight: float = 0.00,
@@ -104,13 +106,21 @@ def build_portfolio(
                 f"Soros {'+' if offset > 0 else ''}{offset:.1%} ({opp.thesis[:40]})"
             )
 
-    # 约束: 归一化 + 上下限
-    for asset in weights:
-        weights[asset] = max(min_single_weight, min(max_single_weight, weights[asset]))
+    # 杠杆: 放大所有仓位
+    if leverage != 1.0:
+        weights = {k: v * leverage for k, v in weights.items()}
 
-    total = sum(weights.values())
-    if total > 0:
-        weights = {k: v / total for k, v in weights.items()}
+    # 约束
+    min_w = -max_single_weight if allow_short else min_single_weight
+    for asset in weights:
+        weights[asset] = max(min_w, min(max_single_weight, weights[asset]))
+
+    # 归一化: 多头总权重 = leverage（不是 1.0）
+    long_total = sum(v for v in weights.values() if v > 0)
+    if long_total > 0:
+        target_long = leverage
+        scale = target_long / long_total
+        weights = {k: v * scale if v > 0 else v for k, v in weights.items()}
 
     # 构建输出
     allocations = []
