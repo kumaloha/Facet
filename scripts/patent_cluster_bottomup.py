@@ -6,7 +6,7 @@
 适用于任何行业，只需提供公司名。
 
 用法:
-    PYTHONPATH=. .venv/bin/python scripts/patent_cluster_bottomup.py
+    PYTHONPATH=src .venv/bin/python scripts/patent_cluster_bottomup.py
 """
 from __future__ import annotations
 

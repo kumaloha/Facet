@@ -5,7 +5,7 @@
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 import pandas as pd
 import polaris.features.l0.company  # noqa: F401
 import polaris.features.l0.cross_period  # noqa: F401

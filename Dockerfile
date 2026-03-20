@@ -2,15 +2,16 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY anchor/pyproject.toml anchor/pyproject.toml
-COPY polaris/pyproject.toml polaris/pyproject.toml
+COPY pyproject.toml pyproject.toml
 
-RUN pip install --no-cache-dir -e anchor/ -e polaris/
+RUN pip install --no-cache-dir -e .
 
-COPY anchor/ anchor/
-COPY polaris/ polaris/
-COPY axion/ axion/
+COPY src/ src/
+COPY scripts/ scripts/
+COPY sources.yaml sources.yaml
 
 RUN mkdir -p data
+
+ENV PYTHONPATH=/app/src
 
 CMD ["python", "-m", "anchor", "--help"]

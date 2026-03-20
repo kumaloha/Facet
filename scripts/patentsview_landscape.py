@@ -10,8 +10,8 @@
     2. 在 .env 中添加 PATENTSVIEW_API_KEY=your_key
 
 用法:
-    PYTHONPATH=. .venv/bin/python scripts/patentsview_landscape.py
-    PYTHONPATH=. .venv/bin/python scripts/patentsview_landscape.py --mode serper   # 用 Serper 快速验证
+    PYTHONPATH=src .venv/bin/python scripts/patentsview_landscape.py
+    PYTHONPATH=src .venv/bin/python scripts/patentsview_landscape.py --mode serper   # 用 Serper 快速验证
 """
 from __future__ import annotations
 

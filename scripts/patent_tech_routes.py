@@ -9,7 +9,7 @@
   4. 余弦相似度矩阵 → 层次聚类 → 技术路线图
 
 用法:
-    PYTHONPATH=. .venv/bin/python scripts/patent_tech_routes.py
+    PYTHONPATH=src .venv/bin/python scripts/patent_tech_routes.py
 """
 from __future__ import annotations
 

@@ -7,9 +7,9 @@
   Step 4: Embedding → 聚类 → 技术路线分析
 
 用法:
-    PYTHONPATH=. .venv/bin/python scripts/patent_bulk_search.py                         # Step 1-2: 搜索
-    PYTHONPATH=. .venv/bin/python scripts/patent_bulk_search.py --extract               # Step 3-4: 提取+聚类
-    PYTHONPATH=. .venv/bin/python scripts/patent_bulk_search.py --extract --max 30      # 每公司最多30篇
+    PYTHONPATH=src .venv/bin/python scripts/patent_bulk_search.py                         # Step 1-2: 搜索
+    PYTHONPATH=src .venv/bin/python scripts/patent_bulk_search.py --extract               # Step 3-4: 提取+聚类
+    PYTHONPATH=src .venv/bin/python scripts/patent_bulk_search.py --extract --max 30      # 每公司最多30篇
 """
 from __future__ import annotations
 
