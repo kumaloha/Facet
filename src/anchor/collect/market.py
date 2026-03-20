@@ -227,6 +227,21 @@ FRED_SERIES: dict[str, str] = {
     "industrial_production": "INDPRO",    # 工业产出指数 (月度, 指数 → 需算 YoY)
     "housing_starts": "HOUST",            # 新屋开工 (月度, 千)
     "m2_growth": "M2SL",                  # M2 货币供应 (月度, 十亿$ → 需算 YoY)
+    # Force 5 技术/创造力指标
+    "labor_productivity": "OPHNFB",       # 非农劳动生产率 (季度, 指数→算增速)
+    "rd_spending": "Y694RC1Q027SBEA",     # 私人R&D支出 (季度, 十亿$→算增速)
+    # Force 4 自然之力代理指标
+    "food_cpi": "CPIUFDSL",              # 食品CPI (月度, 指数→算YoY) — 旱灾/供给冲击代理
+    # Force 3 外部秩序指标
+    "trade_balance": "BOPGSTB",           # 商品贸易差额 (月度, 百万$)
+    "dollar_index": "DTWEXBGS",           # 美元广义指数 (日度)
+    "wti_oil": "DCOILWTICO",             # WTI原油 (日度, $/桶)
+    # Force 2 内部秩序指标
+    "consumer_sentiment": "UMCSENT",      # 密歇根消费者信心 (月度)
+    "gini_index": "SIPOVGINIUSA",         # 基尼系数 (年度)
+    "real_median_income": "MEHOINUSA672N", # 实际中位家庭收入 (年度)
+    "real_weekly_earnings": "LES1252881600Q", # 实际周薪中位数 (季度)
+    "nonfarm_productivity": "OPHNFB",     # 非农生产率 (季度) — 对比工资=分配公平
     # Force 1 结构性指标（2007 case 发现的关键缺失）
     "mortgage_debt_service": "MDSP",      # 房贷偿付比/可支配收入 (季度, %)
     "mortgage_delinquency": "DRSFRMACBS", # 房贷逾期率 (季度, %) — 信贷质量最直接指标

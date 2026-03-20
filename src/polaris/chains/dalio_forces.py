@@ -300,11 +300,45 @@ def assess_force2_internal_order(data: dict | None = None) -> ForceAssessment:
         f.system_reasoning = "无明显内部秩序压力（或数据不足）"
         f.system_confidence = 0.2
 
+    # 消费者信心（最高频的社会情绪指标）
+    consumer_sent = d.get("consumer_sentiment")
+    if consumer_sent is not None:
+        trend = "deteriorating" if consumer_sent < 60 else ("stable" if consumer_sent < 80 else "improving")
+        f.indicators.append(Indicator(
+            name="消费者信心(密歇根)", value=consumer_sent, trend=trend,
+            context="<60=悲观(历史低位), 60-80=中性, >80=乐观. 2007≈90, 2008→55, 2022→50"))
+        if consumer_sent < 60:
+            signals.append(f"消费者信心{consumer_sent}(极度悲观)")
+
+    # 实际工资 vs 生产率
+    wage = d.get("real_weekly_earnings_growth")
+    prod = d.get("nonfarm_productivity_growth")
+    if wage is not None and prod is not None:
+        gap = wage - prod
+        f.indicators.append(Indicator(
+            name="工资-生产率缺口", value=round(gap, 1), unit="pp",
+            context="负值=劳动者没分享到增长收益→不满积累"))
+        if gap < -1.5:
+            signals.append(f"工资严重落后生产率({gap:+.1f}pp)")
+
+    # 重新判断
+    if len(signals) >= 3:
+        f.system_direction = ForceDirection.STRONGLY_NEGATIVE
+        f.system_reasoning = f"内部秩序严重恶化: {'; '.join(signals[:3])}"
+        f.system_confidence = 0.6
+    elif len(signals) >= 1:
+        f.system_direction = ForceDirection.NEGATIVE
+        f.system_reasoning = f"内部存在压力: {'; '.join(signals)}"
+        f.system_confidence = 0.4
+    else:
+        f.system_direction = ForceDirection.NEUTRAL
+        f.system_reasoning = "无明显内部秩序压力"
+        f.system_confidence = 0.3
+
     f.system_highlights.append(
-        "达利欧: 贫富分化→政治极化→民粹主义→激进政策(加税/管制/贸易保护)"
-        "→ 对企业盈利和资产价格不利")
+        "达利欧: 贫富分化→政治极化→民粹主义→激进政策→资产价格不利")
     f.system_highlights.append(
-        "关键判断需要人: 当前政治环境是否已经极化到影响政策可预测性？")
+        "关键判断需要人: 政治极化是否已影响政策可预测性？(数据无法捕捉)")
     return f
 
 
@@ -381,10 +415,38 @@ def assess_force3_external_order(data: dict | None = None) -> ForceAssessment:
         f.system_reasoning = "无明显外部秩序恶化信号（或数据不足）"
         f.system_confidence = 0.2
 
+    # 美元走势（FRED可获取）
+    dollar_yoy = d.get("dollar_index_yoy")
+    if dollar_yoy is not None:
+        f.indicators.append(Indicator(
+            name="美元指数同比", value=dollar_yoy, unit="%",
+            context="强美元=资本回流美国/EM承压. 弱美元=全球流动性宽松"))
+
+    # 贸易差额
+    trade_bal = d.get("trade_balance")
+    if trade_bal is not None:
+        f.indicators.append(Indicator(
+            name="商品贸易差额", value=trade_bal, unit="十亿$",
+            context="持续恶化=竞争力下降或内需过旺"))
+
+    # 重新判断
+    if len(signals) >= 2:
+        f.system_direction = ForceDirection.STRONGLY_NEGATIVE
+        f.system_reasoning = f"外部秩序显著恶化: {'; '.join(signals)}"
+        f.system_confidence = 0.5
+    elif signals:
+        f.system_direction = ForceDirection.NEGATIVE
+        f.system_reasoning = f"外部存在压力: {signals[0]}"
+        f.system_confidence = 0.4
+    else:
+        f.system_direction = ForceDirection.NEUTRAL
+        f.system_reasoning = "无明显外部秩序恶化信号"
+        f.system_confidence = 0.3
+
     f.system_highlights.append(
-        "达利欧: 大国冲突→供应链重构→成本上升→通胀→利率上升→资产价格调整")
+        "达利欧: 大国冲突→供应链重构→成本上升→通胀→资产调整")
     f.system_highlights.append(
-        "关键判断需要人: 当前地缘冲突是否可能升级？供应链脱钩程度如何？")
+        "关键判断需要人: 地缘冲突是否可能升级？制裁/关税的实际影响？")
     return f
 
 
