@@ -1,21 +1,17 @@
 """
-索罗斯反身性链（宏观层）
-========================
+索罗斯反身性认知链
+==================
 
-Pure Alpha 的第二条腿:
-  第一条腿（达利欧）: 经济机器预测未来基本面
-  第二条腿（索罗斯）: 市场定价 vs 达利欧预测 → 偏差 = Alpha 机会
+独立的认知框架——不依赖达利欧的输出。
 
-核心问题: "市场定价与因果引擎预测之间的偏差，是否处于可利用的反身性阶段？"
+索罗斯的核心: 市场参与者的认知本身改变了现实。
+他不预测经济，他观察市场行为，判断偏差何时会自我修正。
 
-输入:
-  1. DalioResult — 达利欧的基本面预测
-  2. MarketImplied — 市场隐含预期（breakeven inflation、利率期货、信用利差等）
-
+输入: 纯市场数据（价格、波动率、利差、动量）
 输出:
-  1. 偏差列表 — 达利欧认为 X 但市场定价 Y
-  2. 反身性阶段 — 自我强化中 / 接近顶点 / 正在反转
-  3. Alpha 机会 — 偏差大 × 可能收敛的押注
+  1. 市场叙事: 市场在讲什么故事
+  2. 反身性阶段: 这个故事是在自我强化还是接近破裂
+  3. 过度延伸: 每个资产被推到了多极端的位置
 """
 
 from __future__ import annotations
@@ -23,668 +19,288 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
-from polaris.principles.dimensions import (
-    CycleRegime,
-    DalioResult,
-    Tilt,
-)
 
-
-# ── 市场隐含预期数据 ─────────────────────────────────────────
+# ── 市场数据输入 ────────────────────────────────────────────
 
 
 @dataclass
-class MarketImplied:
-    """市场隐含预期 — 从资产价格反推市场认为会发生什么。
+class MarketState:
+    """纯市场数据——索罗斯认知的唯一输入。
 
-    所有字段可选。缺失字段导致对应偏差无法计算。
-    数据源: FRED (breakeven, credit spreads), 利率期货, 反向 DCF
+    不含任何宏观经济数据（那是达利欧的领域）。
+    只有市场价格和市场行为。
     """
-    # 通胀预期
-    breakeven_5y: float | None = None          # 5 年期 breakeven 通胀 (%)
-    breakeven_10y: float | None = None         # 10 年期 breakeven 通胀 (%)
-
-    # 利率预期
-    implied_rate_12m: float | None = None      # 12 个月后市场隐含利率 (%)
-
-    # 信用风险定价
-    credit_spread_ig: float | None = None      # 投资级信用利差 (%)
-    credit_spread_hy: float | None = None      # 高收益信用利差 (%)
-
-    # 股票隐含增长
-    implied_equity_growth: float | None = None  # 反向 DCF 隐含增长率 (%)
+    # 各资产近期动量 (过去 12 个月回报 %)
+    momentum_equity: float | None = None
+    momentum_long_bond: float | None = None
+    momentum_gold: float | None = None
+    momentum_commodity: float | None = None
+    momentum_em_bond: float | None = None
 
     # 波动率
-    vix: float | None = None                    # 隐含波动率
-    vix_term_structure: float | None = None     # VIX 期限结构斜率（正=contango=平静, 负=backwardation=恐慌）
+    vix: float | None = None
+    vix_percentile: float | None = None       # VIX 在过去 5 年的百分位 (0-100)
+    vix_change_1m: float | None = None        # VIX 过去 1 个月变化
+
+    # 信用市场
+    credit_spread_hy: float | None = None     # 高收益信用利差 (%)
+    credit_spread_change_3m: float | None = None  # 利差 3 个月变化 (pp)
+
+    # 收益率曲线
+    yield_curve_10y_3m: float | None = None   # 10Y - 3M 利差 (%)
+    yield_curve_change_3m: float | None = None
+
+    # 估值
+    equity_pe_ratio: float | None = None      # S&P 500 P/E 比率
+    equity_pe_percentile: float | None = None # P/E 在历史分布的百分位 (0-100)
+
+    # 快照时间
+    snapshot_date: str = ""
 
 
-# ── 偏差类型 ────────────────────────────────────────────────
+# ── 叙事类型 ────────────────────────────────────────────────
 
 
-class DivergenceType(str, Enum):
-    INFLATION = "inflation"         # 达利欧预测的通胀 vs 市场定价的通胀
-    GROWTH = "growth"               # 达利欧预测的增长 vs 市场定价的增长
-    CREDIT_RISK = "credit_risk"     # 达利欧预测的违约 vs 市场定价的违约
-    POLICY = "policy"               # 达利欧预测的政策路径 vs 市场定价的利率路径
-    VOLATILITY = "volatility"       # 达利欧预测的不确定性 vs 市场定价的波动率
-
-
-@dataclass
-class Divergence:
-    """单个偏差。"""
-    type: DivergenceType
-    dalio_view: float               # 达利欧因果引擎的预测值
-    market_view: float              # 市场隐含定价
-    gap: float                      # 偏差 = dalio - market (正=达利欧比市场更乐观/高)
-    gap_magnitude: str              # "small" / "medium" / "large"
-    direction: str                  # 达利欧比市场更 "hawkish" / "dovish" / "bullish" / "bearish"
-    tradeable: bool                 # 是否可交易
-    detail: str                     # 人可读解释
+class MarketNarrative(str, Enum):
+    """市场在讲什么故事。"""
+    RISK_ON = "risk_on"                    # 风险偏好
+    RISK_OFF = "risk_off"                  # 风险厌恶
+    INFLATION_FEAR = "inflation_fear"      # 通胀恐惧
+    DEFLATION_FEAR = "deflation_fear"      # 通缩恐惧
+    COMPLACENCY = "complacency"            # 自满
+    PANIC = "panic"                        # 恐慌
+    AMBIGUOUS = "ambiguous"                # 不明确
 
 
 class ReflexivityPhase(str, Enum):
     """反身性阶段。"""
-    EARLY_SELF_REINFORCING = "early_self_reinforcing"    # 趋势刚开始自我强化
-    LATE_SELF_REINFORCING = "late_self_reinforcing"      # 趋势强化到极端
-    APPROACHING_CLIMAX = "approaching_climax"             # 接近顶点/底点
-    REVERSAL = "reversal"                                 # 正在反转
-    NEUTRAL = "neutral"                                   # 无明显反身性
-    UNKNOWN = "unknown"
+    EARLY_TREND = "early_trend"
+    SELF_REINFORCING = "self_reinforcing"
+    LATE_STAGE = "late_stage"
+    APPROACHING_CLIMAX = "approaching_climax"
+    REVERSAL = "reversal"
+    NEUTRAL = "neutral"
 
 
 @dataclass
-class AlphaOpportunity:
-    """Alpha 机会 = 偏差 × 反身性阶段 × 可操作性。"""
-    asset_type: str                  # 哪个资产类别
-    direction: str                   # "overweight" / "underweight"
-    conviction: float                # 信心 0-1
-    thesis: str                      # 为什么这是机会
-    divergence: Divergence           # 对应的偏差
-    risk: str                        # 如果错了会怎样
+class SorosInsight:
+    """索罗斯认知链的输出。"""
+    narrative: MarketNarrative = MarketNarrative.AMBIGUOUS
+    narrative_detail: str = ""
+
+    phase: ReflexivityPhase = ReflexivityPhase.NEUTRAL
+    phase_detail: str = ""
+
+    # 每个资产的过度延伸度 (-1 到 +1)
+    # 正 = 市场过度乐观（被高估）→ 均值回归风险
+    # 负 = 市场过度悲观（被低估）→ 反弹机会
+    overextension: dict[str, float] = field(default_factory=dict)
+
+    confidence: float = 0.0
+    evidence: list[str] = field(default_factory=list)
 
 
-@dataclass
-class SorosChainResult:
-    """索罗斯链完整输出。"""
-    divergences: list[Divergence] = field(default_factory=list)
-    reflexivity_phase: ReflexivityPhase = ReflexivityPhase.UNKNOWN
-    reflexivity_detail: str = ""
-    alpha_opportunities: list[AlphaOpportunity] = field(default_factory=list)
-    conclusion: str = ""
+# ── 叙事识别 ────────────────────────────────────────────────
 
 
-# ══════════════════════════════════════════════════════════════
-#  偏差检测
-# ══════════════════════════════════════════════════════════════
+def _identify_narrative(market: MarketState) -> tuple[MarketNarrative, str]:
+    """从市场数据读出市场在讲什么故事。"""
+    eq = market.momentum_equity
+    bond = market.momentum_long_bond
+    gold = market.momentum_gold
+    comm = market.momentum_commodity
+    vix = market.vix
+
+    if eq is None:
+        return MarketNarrative.AMBIGUOUS, "数据不足"
+
+    # VIX 极端先判
+    if vix is not None and vix > 35:
+        return MarketNarrative.PANIC, f"VIX={vix:.0f} 恐慌水平"
+    if vix is not None and vix < 13 and eq is not None and eq > 15:
+        return MarketNarrative.COMPLACENCY, f"VIX={vix:.0f} + 股票涨{eq:.0f}% 市场自满"
+
+    # 股债方向组合
+    if eq is not None and bond is not None:
+        if eq > 10 and bond > 5:
+            return MarketNarrative.RISK_ON, f"股债双涨: 股+{eq:.0f}% 债+{bond:.0f}%"
+        if eq < -5 and bond > 10:
+            return MarketNarrative.RISK_OFF, f"避险: 股{eq:.0f}% 债+{bond:.0f}%"
+        if eq < -10 and bond < -10:
+            return MarketNarrative.PANIC, f"全面下跌: 股{eq:.0f}% 债{bond:.0f}%"
+
+    # 通胀/通缩叙事
+    if bond is not None and comm is not None:
+        if bond < -5 and comm > 10:
+            return MarketNarrative.INFLATION_FEAR, f"通胀叙事: 大宗+{comm:.0f}% 债{bond:.0f}%"
+        if bond > 10 and comm < -10:
+            return MarketNarrative.DEFLATION_FEAR, f"通缩叙事: 债+{bond:.0f}% 大宗{comm:.0f}%"
+
+    return MarketNarrative.AMBIGUOUS, "混合信号"
 
 
-def _classify_gap(gap: float, thresholds: tuple[float, float] = (0.5, 1.5)) -> str:
-    """偏差幅度分类。"""
-    if abs(gap) < thresholds[0]:
-        return "small"
-    elif abs(gap) < thresholds[1]:
-        return "medium"
-    return "large"
-
-
-def _detect_inflation_divergence(
-    dalio: DalioResult,
-    market: MarketImplied,
-) -> Divergence | None:
-    """达利欧预测的通胀方向 vs 市场 breakeven 通胀。"""
-    if market.breakeven_5y is None:
-        return None
-    if dalio.regime is None:
-        return None
-
-    # 达利欧的通胀预测: 从因果引擎的 inflation_pressure 推断
-    # inflation_gap > 0 = 达利欧认为通胀高于预期
-    dalio_inflation_view = dalio.regime.inflation_gap  # pp above/below expected
-
-    # 市场的通胀预测: breakeven inflation vs 央行目标(2%)
-    market_inflation_view = market.breakeven_5y - 2.0  # pp above/below 2%
-
-    gap = dalio_inflation_view - market_inflation_view
-
-    if abs(gap) < 0.3:
-        return None  # 偏差太小，不值得交易
-
-    direction = "hawkish" if gap > 0 else "dovish"
-    # 达利欧比市场更 hawkish = 达利欧认为通胀更高 = 市场低估了通胀
-
-    return Divergence(
-        type=DivergenceType.INFLATION,
-        dalio_view=dalio_inflation_view,
-        market_view=market_inflation_view,
-        gap=round(gap, 2),
-        gap_magnitude=_classify_gap(gap),
-        direction=direction,
-        tradeable=True,
-        detail=(
-            f"达利欧认为通胀偏离目标 {dalio_inflation_view:+.1f}pp，"
-            f"市场定价偏离 {market_inflation_view:+.1f}pp，"
-            f"偏差 {gap:+.1f}pp → 达利欧比市场更{direction}"
-        ),
-    )
-
-
-def _detect_credit_divergence(
-    dalio: DalioResult,
-    market: MarketImplied,
-) -> Divergence | None:
-    """达利欧预测的违约压力 vs 市场信用利差。"""
-    if market.credit_spread_hy is None:
-        return None
-
-    # 达利欧的违约预测: 从因果引擎的 tilts 推断
-    # 如果 default_pressure 高 → 达利欧认为违约风险高
-    # 用 DalioResult 的 active_tilts 间接推断
-    dalio_risk_view = 0.0
-    for tilt in dalio.active_tilts:
-        if tilt.asset_type == "equity_cyclical" and tilt.direction == "underweight":
-            dalio_risk_view += tilt.magnitude
-        if tilt.asset_type == "gold" and tilt.direction == "overweight":
-            dalio_risk_view += tilt.magnitude * 0.5
-
-    # 市场的违约定价: HY 利差
-    # 正常: 3-5%, 紧张: 5-7%, 恐慌: 7%+
-    market_risk_view = (market.credit_spread_hy - 4.0) / 3.0  # 归一化: 4%=0, 7%=1
-
-    gap = dalio_risk_view - market_risk_view
-
-    if abs(gap) < 0.2:
-        return None
-
-    direction = "bearish" if gap > 0 else "bullish"
-
-    return Divergence(
-        type=DivergenceType.CREDIT_RISK,
-        dalio_view=round(dalio_risk_view, 2),
-        market_view=round(market_risk_view, 2),
-        gap=round(gap, 2),
-        gap_magnitude=_classify_gap(gap, (0.3, 0.8)),
-        direction=direction,
-        tradeable=True,
-        detail=(
-            f"达利欧违约压力信号 {dalio_risk_view:.2f}，"
-            f"市场信用利差定价 {market_risk_view:.2f} (HY={market.credit_spread_hy:.1f}%)，"
-            f"偏差 {gap:+.2f} → 达利欧比市场更{direction}"
-        ),
-    )
-
-
-def _detect_policy_divergence(
-    dalio: DalioResult,
-    market: MarketImplied,
-    current_rate: float | None,
-) -> Divergence | None:
-    """达利欧预测的政策路径 vs 市场利率期货。"""
-    if market.implied_rate_12m is None or current_rate is None:
-        return None
-
-    # 市场隐含的 12 个月后利率变化
-    market_rate_change = market.implied_rate_12m - current_rate
-
-    # 达利欧的预测: 从 regime + tilts 推断政策方向
-    # 如果 nominal_bond overweight → 达利欧预期降息
-    dalio_rate_change = 0.0
-    for tilt in dalio.active_tilts:
-        if tilt.asset_type == "nominal_bond":
-            if tilt.direction == "overweight":
-                dalio_rate_change -= tilt.magnitude * 2.0  # 超配债券 → 预期降息
-            else:
-                dalio_rate_change += tilt.magnitude * 2.0  # 低配债券 → 预期加息
-
-    gap = dalio_rate_change - market_rate_change
-
-    if abs(gap) < 0.3:
-        return None
-
-    direction = "dovish" if gap < 0 else "hawkish"
-
-    return Divergence(
-        type=DivergenceType.POLICY,
-        dalio_view=round(dalio_rate_change, 2),
-        market_view=round(market_rate_change, 2),
-        gap=round(gap, 2),
-        gap_magnitude=_classify_gap(gap, (0.5, 1.5)),
-        direction=direction,
-        tradeable=True,
-        detail=(
-            f"达利欧预期利率变化 {dalio_rate_change:+.1f}pp，"
-            f"市场定价 {market_rate_change:+.1f}pp，"
-            f"偏差 {gap:+.1f}pp → 达利欧比市场更{direction}"
-        ),
-    )
-
-
-def _detect_volatility_divergence(
-    dalio: DalioResult,
-    market: MarketImplied,
-) -> Divergence | None:
-    """达利欧看到的尾部风险 vs 市场定价的波动率。"""
-    if market.vix is None:
-        return None
-
-    # 达利欧的风险视图: 从因果引擎的 hedge_specs 数量推断
-    dalio_risk_level = 0.0
-    if hasattr(dalio, "school_score"):
-        # 用 tilts 的分散度间接推断不确定性
-        ow = [t for t in dalio.active_tilts if t.direction == "overweight"]
-        uw = [t for t in dalio.active_tilts if t.direction == "underweight"]
-        # 偏移幅度大 = 达利欧认为方向性强 = 应该有对应的波动率
-        avg_magnitude = sum(t.magnitude for t in dalio.active_tilts) / max(len(dalio.active_tilts), 1)
-        dalio_risk_level = avg_magnitude * 30 + 15  # 粗略映射到 VIX 等效
-
-    # 偏差: 达利欧认为的不确定性 vs VIX
-    gap = dalio_risk_level - market.vix
-
-    if abs(gap) < 5:
-        return None
-
-    direction = "bearish" if gap > 0 else "bullish"
-
-    return Divergence(
-        type=DivergenceType.VOLATILITY,
-        dalio_view=round(dalio_risk_level, 1),
-        market_view=market.vix,
-        gap=round(gap, 1),
-        gap_magnitude=_classify_gap(gap, (5, 15)),
-        direction=direction,
-        tradeable=True,
-        detail=(
-            f"达利欧隐含波动率 {dalio_risk_level:.0f}，"
-            f"VIX={market.vix:.0f}，"
-            f"偏差 {gap:+.0f} → {'市场太自满' if gap > 0 else '市场太恐慌'}"
-        ),
-    )
-
-
-# ══════════════════════════════════════════════════════════════
-#  反身性阶段判断
-# ══════════════════════════════════════════════════════════════
+# ── 反身性阶段 ──────────────────────────────────────────────
 
 
 def _assess_reflexivity(
-    divergences: list[Divergence],
-    market: MarketImplied,
+    market: MarketState,
+    narrative: MarketNarrative,
 ) -> tuple[ReflexivityPhase, str]:
-    """判断当前反身性阶段。
+    """判断当前趋势处于反身性的哪个阶段。"""
+    eq_mom = market.momentum_equity
+    vix = market.vix
+    vix_change = market.vix_change_1m
+    spread_change = market.credit_spread_change_3m
+    pe_pct = market.equity_pe_percentile
 
-    索罗斯框架:
-    - 趋势 + 偏差 = 开始自我强化
-    - 偏差越来越大 = 趋势加速（远离均衡）
-    - 偏差极端 + 外部冲击 = 接近反转
-    - 偏差开始缩小 = 正在反转
+    if narrative == MarketNarrative.PANIC:
+        if vix_change is not None and vix_change > 10:
+            return ReflexivityPhase.APPROACHING_CLIMAX, "恐慌加速 → 可能接近底部"
+        return ReflexivityPhase.SELF_REINFORCING, "恐慌中 → 抛售自我强化"
+
+    if narrative == MarketNarrative.COMPLACENCY:
+        if pe_pct is not None and pe_pct > 85:
+            return ReflexivityPhase.APPROACHING_CLIMAX, f"自满 + 估值{pe_pct:.0f}百分位 → 接近顶点"
+        return ReflexivityPhase.LATE_STAGE, "自满 → 趋势已延伸很久"
+
+    if narrative == MarketNarrative.RISK_ON:
+        if spread_change is not None and spread_change < -0.5:
+            return ReflexivityPhase.SELF_REINFORCING, "risk on + 利差收窄 → 自我强化"
+        if eq_mom is not None and eq_mom > 25:
+            return ReflexivityPhase.LATE_STAGE, f"股票涨{eq_mom:.0f}% → 已延伸"
+        return ReflexivityPhase.EARLY_TREND, "risk on 初期"
+
+    if narrative == MarketNarrative.RISK_OFF:
+        if spread_change is not None and spread_change > 1.0:
+            return ReflexivityPhase.SELF_REINFORCING, "risk off + 利差扩大 → 自我强化"
+        return ReflexivityPhase.EARLY_TREND, "避险初期"
+
+    # VIX 方向反转
+    if vix_change is not None:
+        if vix_change < -5 and vix is not None and vix > 25:
+            return ReflexivityPhase.REVERSAL, "VIX 从高位回落 → 恐慌在消退"
+        if vix_change > 5 and vix is not None and vix < 20:
+            return ReflexivityPhase.REVERSAL, "VIX 从低位急升 → 自满在瓦解"
+
+    return ReflexivityPhase.NEUTRAL, "无明显反身性趋势"
+
+
+# ── 过度延伸检测 ────────────────────────────────────────────
+
+
+def _compute_overextension(market: MarketState) -> dict[str, float]:
+    """每个资产被市场推到了多极端的位置。
+
+    动量极端 + 估值极端 = 过度延伸
+    输出: -1(极度悲观) 到 +1(极度乐观)
     """
-    if not divergences:
-        return ReflexivityPhase.NEUTRAL, "无显著偏差"
+    overext: dict[str, float] = {}
 
-    large_gaps = [d for d in divergences if d.gap_magnitude == "large"]
-    medium_gaps = [d for d in divergences if d.gap_magnitude == "medium"]
+    if market.momentum_equity is not None:
+        eq = market.momentum_equity / 40  # ±40% → ±1
+        if market.equity_pe_percentile is not None:
+            val = (market.equity_pe_percentile - 50) / 50
+            eq = eq * 0.5 + val * 0.5
+        overext["equity_cyclical"] = max(-1, min(1, eq))
 
-    # VIX 期限结构是反身性的关键指标
-    # backwardation(负斜率) = 近期恐慌 > 远期 = 市场在反转中
-    # contango(正斜率) = 市场自满 = 可能在自我强化的晚期
-    vix_backwardation = (
-        market.vix_term_structure is not None
-        and market.vix_term_structure < -0.1
-    )
-    vix_extreme_contango = (
-        market.vix_term_structure is not None
-        and market.vix_term_structure > 0.5
-    )
+    if market.momentum_long_bond is not None:
+        overext["long_term_bond"] = max(-1, min(1, market.momentum_long_bond / 30))
+        overext["intermediate_bond"] = overext["long_term_bond"] * 0.5
 
-    if vix_backwardation and large_gaps:
-        return (
-            ReflexivityPhase.REVERSAL,
-            f"VIX 期限结构倒挂 + {len(large_gaps)} 个大偏差 → 反转进行中",
-        )
+    if market.momentum_gold is not None:
+        overext["gold"] = max(-1, min(1, market.momentum_gold / 30))
 
-    if len(large_gaps) >= 2:
-        return (
-            ReflexivityPhase.APPROACHING_CLIMAX,
-            f"{len(large_gaps)} 个大偏差 → 接近极端，反转风险高",
-        )
+    if market.momentum_commodity is not None:
+        overext["commodity"] = max(-1, min(1, market.momentum_commodity / 30))
 
-    if vix_extreme_contango and medium_gaps:
-        return (
-            ReflexivityPhase.LATE_SELF_REINFORCING,
-            f"VIX 极度 contango + 偏差累积 → 自我强化晚期（市场自满）",
-        )
+    if market.momentum_em_bond is not None:
+        overext["em_bond"] = max(-1, min(1, market.momentum_em_bond / 25))
 
-    if medium_gaps:
-        return (
-            ReflexivityPhase.EARLY_SELF_REINFORCING,
-            f"{len(medium_gaps)} 个中等偏差 → 趋势在强化",
-        )
+    # VIX 修正: 自满时高估更危险，恐慌时低估更有机会
+    if market.vix is not None:
+        if market.vix < 14:
+            for k, v in overext.items():
+                if v > 0:
+                    overext[k] = min(1.0, v * 1.3)
+        elif market.vix > 30:
+            for k, v in overext.items():
+                if v < 0:
+                    overext[k] = max(-1.0, v * 1.3)
 
-    return ReflexivityPhase.NEUTRAL, "偏差较小，无明显反身性"
+    return overext
 
 
-# ══════════════════════════════════════════════════════════════
-#  Alpha 机会生成
-# ══════════════════════════════════════════════════════════════
+# ── 主入口 ──────────────────────────────────────────────────
 
 
-def _generate_alpha_opportunities(
-    divergences: list[Divergence],
-    phase: ReflexivityPhase,
-    dalio: DalioResult,
-) -> list[AlphaOpportunity]:
-    """从偏差 + 反身性阶段 → Alpha 机会。
+def evaluate_soros(market: MarketState) -> SorosInsight:
+    """索罗斯认知链主入口。
 
-    只在偏差 medium/large + 可交易时生成机会。
-    反身性阶段影响信心:
-      - approaching_climax/reversal: 高信心（偏差即将收敛）
-      - late_self_reinforcing: 中等信心（还在强化但接近极端）
-      - early_self_reinforcing: 低信心（趋势可能继续）
+    纯市场数据 → 叙事 + 反身性阶段 + 过度延伸度
+    不需要达利欧的输出。
     """
-    phase_confidence = {
-        ReflexivityPhase.REVERSAL: 0.8,
-        ReflexivityPhase.APPROACHING_CLIMAX: 0.7,
-        ReflexivityPhase.LATE_SELF_REINFORCING: 0.5,
-        ReflexivityPhase.EARLY_SELF_REINFORCING: 0.3,
-        ReflexivityPhase.NEUTRAL: 0.2,
-        ReflexivityPhase.UNKNOWN: 0.1,
-    }
+    result = SorosInsight()
 
-    opportunities: list[AlphaOpportunity] = []
+    result.narrative, result.narrative_detail = _identify_narrative(market)
+    result.evidence.append(f"叙事: {result.narrative.value} — {result.narrative_detail}")
 
-    for div in divergences:
-        if not div.tradeable:
-            continue
-        if div.gap_magnitude == "small":
-            continue
+    result.phase, result.phase_detail = _assess_reflexivity(market, result.narrative)
+    result.evidence.append(f"阶段: {result.phase.value} — {result.phase_detail}")
 
-        base_conviction = phase_confidence.get(phase, 0.2)
-        if div.gap_magnitude == "large":
-            base_conviction = min(1.0, base_conviction + 0.2)
+    result.overextension = _compute_overextension(market)
+    for asset, ext in sorted(result.overextension.items(), key=lambda x: -abs(x[1])):
+        if abs(ext) > 0.3:
+            direction = "高估" if ext > 0 else "低估"
+            result.evidence.append(f"{asset}: {direction} {abs(ext):.0%}")
 
-        # 映射偏差到资产方向
-        if div.type == DivergenceType.INFLATION:
-            if div.gap > 0:
-                # 达利欧认为通胀更高 → 市场低估通胀 → 做多通胀对冲
-                opportunities.append(AlphaOpportunity(
-                    asset_type="inflation_linked_bond",
-                    direction="overweight",
-                    conviction=base_conviction,
-                    thesis=f"市场低估通胀: breakeven {div.market_view:+.1f}pp，达利欧预测 {div.dalio_view:+.1f}pp",
-                    divergence=div,
-                    risk="如果通胀确实回落，TIPS 会跑输名义债券",
-                ))
-            else:
-                opportunities.append(AlphaOpportunity(
-                    asset_type="nominal_bond",
-                    direction="overweight",
-                    conviction=base_conviction,
-                    thesis=f"市场高估通胀: breakeven {div.market_view:+.1f}pp，达利欧预测 {div.dalio_view:+.1f}pp",
-                    divergence=div,
-                    risk="如果通胀超预期上行，名义债券会大亏",
-                ))
-
-        elif div.type == DivergenceType.CREDIT_RISK:
-            if div.gap > 0:
-                # 达利欧比市场更悲观 → 市场低估违约风险 → 避险
-                opportunities.append(AlphaOpportunity(
-                    asset_type="equity_cyclical",
-                    direction="underweight",
-                    conviction=base_conviction,
-                    thesis=f"市场低估信用风险: 利差仅 {div.market_view:.1f}，达利欧违约信号 {div.dalio_view:.1f}",
-                    divergence=div,
-                    risk="如果经济软着陆，空头会被轧",
-                ))
-            else:
-                opportunities.append(AlphaOpportunity(
-                    asset_type="equity_cyclical",
-                    direction="overweight",
-                    conviction=base_conviction,
-                    thesis=f"市场高估信用风险: 利差 {div.market_view:.1f}，达利欧违约信号仅 {div.dalio_view:.1f}",
-                    divergence=div,
-                    risk="如果信用事件爆发，损失会很大",
-                ))
-
-        elif div.type == DivergenceType.POLICY:
-            if div.gap < 0:
-                # 达利欧比市场更鸽 → 市场低估降息 → 做多债券
-                opportunities.append(AlphaOpportunity(
-                    asset_type="nominal_bond",
-                    direction="overweight",
-                    conviction=base_conviction,
-                    thesis=f"市场低估降息: 市场定价 {div.market_view:+.1f}pp，达利欧预测 {div.dalio_view:+.1f}pp",
-                    divergence=div,
-                    risk="如果央行比预期更鹰派，债券会亏",
-                ))
-            else:
-                opportunities.append(AlphaOpportunity(
-                    asset_type="nominal_bond",
-                    direction="underweight",
-                    conviction=base_conviction,
-                    thesis=f"市场低估加息: 市场定价 {div.market_view:+.1f}pp，达利欧预测 {div.dalio_view:+.1f}pp",
-                    divergence=div,
-                    risk="如果通胀缓解导致降息，会踏空",
-                ))
-
-        elif div.type == DivergenceType.VOLATILITY:
-            if div.gap > 0:
-                # 达利欧看到更高风险 → VIX 太低 → 买波动率
-                opportunities.append(AlphaOpportunity(
-                    asset_type="gold",
-                    direction="overweight",
-                    conviction=base_conviction,
-                    thesis=f"市场太自满: VIX={div.market_view:.0f}，达利欧隐含波动率 {div.dalio_view:.0f}",
-                    divergence=div,
-                    risk="如果市场继续平静，持有黄金的机会成本",
-                ))
-
-    # 按信心排序
-    opportunities.sort(key=lambda x: x.conviction, reverse=True)
-    return opportunities
-
-
-# ══════════════════════════════════════════════════════════════
-#  主入口
-# ══════════════════════════════════════════════════════════════
-
-
-def evaluate_soros(
-    dalio: DalioResult,
-    market: MarketImplied,
-    current_rate: float | None = None,
-) -> SorosChainResult:
-    """索罗斯链主入口。
-
-    输入:
-      dalio: 达利欧因果引擎的输出（第一条腿）
-      market: 市场隐含预期数据
-      current_rate: 当前央行基准利率
-
-    输出:
-      偏差列表 + 反身性阶段 + Alpha 机会
-    """
-    result = SorosChainResult()
-
-    # ── 检测偏差 ──
-    detectors = [
-        _detect_inflation_divergence(dalio, market),
-        _detect_credit_divergence(dalio, market),
-        _detect_policy_divergence(dalio, market, current_rate),
-        _detect_volatility_divergence(dalio, market),
-    ]
-    result.divergences = [d for d in detectors if d is not None]
-
-    # ── 反身性阶段 ──
-    result.reflexivity_phase, result.reflexivity_detail = _assess_reflexivity(
-        result.divergences, market,
-    )
-
-    # ── Alpha 机会 ──
-    result.alpha_opportunities = _generate_alpha_opportunities(
-        result.divergences, result.reflexivity_phase, dalio,
-    )
-
-    # ── 结论 ──
-    if not result.divergences:
-        result.conclusion = "无显著偏差: 达利欧预测与市场定价基本一致"
-    elif not result.alpha_opportunities:
-        result.conclusion = f"{len(result.divergences)} 个偏差但均不可操作"
-    else:
-        top = result.alpha_opportunities[0]
-        result.conclusion = (
-            f"{len(result.divergences)} 个偏差，{len(result.alpha_opportunities)} 个 Alpha 机会。"
-            f"最佳: {top.direction} {top.asset_type} (信心 {top.conviction:.0%})"
-        )
+    data_count = sum(1 for v in [
+        market.momentum_equity, market.vix, market.credit_spread_hy,
+        market.equity_pe_percentile, market.momentum_long_bond,
+    ] if v is not None)
+    result.confidence = min(1.0, data_count / 5)
 
     return result
 
 
-# ══════════════════════════════════════════════════════════════
-#  格式化
-# ══════════════════════════════════════════════════════════════
+# ── 格式化 ──────────────────────────────────────────────────
 
 
-def compute_complacency_signal(market: MarketImplied) -> dict[str, float]:
-    """纯市场信号检测（不依赖 breakeven/credit spread）。
-
-    用 VIX 水平 + VIX 期限结构判断市场自满/恐慌程度。
-    这两个数据从 yfinance 直接获取，不需要 FRED。
-
-    自满(VIX低+contango) → 风险资产被高估 → 减分
-    恐慌(VIX高+backwardation) → 风险资产被低估 → 加分
-    """
-    adjustments: dict[str, float] = {}
-
-    if market.vix is None:
-        return adjustments
-
-    vix = market.vix
-    vix_ts = market.vix_term_structure  # 正=contango(平静), 负=backwardation(恐慌)
-
-    # ── 极度自满: VIX < 14 + contango ──
-    # 市场没有为风险定价 → 所有风险资产被高估
-    if vix < 14 and (vix_ts is None or vix_ts > 0.2):
-        strength = (14 - vix) / 10  # VIX=10 → strength=0.4
-        adjustments["equity_cyclical"] = -strength * 0.5
-        adjustments["commodity"] = -strength * 0.3
-        adjustments["gold"] = strength * 0.3  # 自满时黄金被低估
-        adjustments["cash"] = strength * 0.3
-
-    # ── 极度恐慌: VIX > 30 + backwardation ──
-    # 市场过度恐慌 → 风险资产被低估
-    elif vix > 30 and (vix_ts is not None and vix_ts < -0.1):
-        strength = min((vix - 30) / 20, 0.5)  # VIX=50 → strength=0.5
-        adjustments["equity_cyclical"] = strength * 0.4
-        adjustments["gold"] = strength * 0.3  # 恐慌时黄金仍有价值
-        adjustments["nominal_bond"] = strength * 0.2
-        adjustments["commodity"] = -strength * 0.2  # 恐慌=需求崩溃=大宗差
-
-    # ── 中间状态: VIX 20-30 ──
-    # 不做调整——不确定性本身是合理定价
-
-    return adjustments
-
-
-def compute_soros_adjustments(result: SorosChainResult) -> dict[str, float]:
-    """把索罗斯偏差转化为资产排名调整分数。
-
-    核心逻辑:
-    - 通胀偏差: 达利欧比市场更鹰 → 市场低估了通胀 → nominal_bond 是被高估的(减分)
-    - 信用偏差: 达利欧比市场更熊 → 市场低估了风险 → equity 是被高估的(减分)
-    - 波动率偏差: VIX 太低(市场自满) → 所有风险资产被高估(减分)
-
-    返回: {asset_type: adjustment} 正=加分 负=减分
-    """
-    adjustments: dict[str, float] = {}
-
-    for div in result.divergences:
-        if div.gap_magnitude == "small":
-            continue
-
-        strength = 0.15 if div.gap_magnitude == "medium" else 0.25
-
-        if div.type == DivergenceType.INFLATION:
-            if div.gap > 0:
-                # 达利欧认为通胀更高 → 市场低估通胀 → 名义债券被高估
-                adjustments["nominal_bond"] = adjustments.get("nominal_bond", 0) - strength
-                adjustments["inflation_linked_bond"] = adjustments.get("inflation_linked_bond", 0) + strength * 0.5
-                adjustments["commodity"] = adjustments.get("commodity", 0) + strength * 0.5
-            else:
-                # 达利欧认为通胀更低 → 市场高估了通胀 → 大宗/黄金被高估
-                adjustments["commodity"] = adjustments.get("commodity", 0) - strength
-                adjustments["gold"] = adjustments.get("gold", 0) - strength * 0.5
-                adjustments["nominal_bond"] = adjustments.get("nominal_bond", 0) + strength * 0.5
-
-        elif div.type == DivergenceType.CREDIT_RISK:
-            if div.gap > 0:
-                # 达利欧更悲观 → 市场低估风险 → 风险资产被高估
-                adjustments["equity_cyclical"] = adjustments.get("equity_cyclical", 0) - strength
-                adjustments["gold"] = adjustments.get("gold", 0) + strength * 0.5
-                adjustments["cash"] = adjustments.get("cash", 0) + strength * 0.5
-            else:
-                # 达利欧更乐观 → 市场高估了风险 → 风险资产被低估
-                adjustments["equity_cyclical"] = adjustments.get("equity_cyclical", 0) + strength
-                adjustments["nominal_bond"] = adjustments.get("nominal_bond", 0) - strength * 0.3
-
-        elif div.type == DivergenceType.VOLATILITY:
-            if div.gap > 0:
-                # 达利欧看到更高风险 → VIX 太低 → 所有风险资产被高估
-                adjustments["equity_cyclical"] = adjustments.get("equity_cyclical", 0) - strength * 0.7
-                adjustments["commodity"] = adjustments.get("commodity", 0) - strength * 0.5
-                adjustments["gold"] = adjustments.get("gold", 0) + strength * 0.7
-                adjustments["cash"] = adjustments.get("cash", 0) + strength * 0.5
-            else:
-                # VIX 太高(市场恐慌) → 风险资产被低估
-                adjustments["equity_cyclical"] = adjustments.get("equity_cyclical", 0) + strength * 0.5
-                adjustments["gold"] = adjustments.get("gold", 0) - strength * 0.3
-
-        elif div.type == DivergenceType.POLICY:
-            if div.gap < 0:
-                # 达利欧预期更多降息 → 市场低估降息 → 债券被低估
-                adjustments["nominal_bond"] = adjustments.get("nominal_bond", 0) + strength
-            else:
-                adjustments["nominal_bond"] = adjustments.get("nominal_bond", 0) - strength
-
-    return adjustments
-
-
-def format_soros(result: SorosChainResult) -> str:
-    """格式化索罗斯链报告。"""
+def format_soros(result: SorosInsight) -> str:
+    """格式化索罗斯认知报告。"""
     lines = [""]
-    lines.append("  索罗斯反身性链 (Pure Alpha 第二条腿)")
+    lines.append("  索罗斯反身性认知")
     lines.append("  ════════════════════════════════════════════════")
 
-    # 偏差
-    if result.divergences:
-        lines.append("\n  偏差检测:")
-        for d in result.divergences:
-            mag = {"small": "·", "medium": "◆", "large": "★"}[d.gap_magnitude]
-            lines.append(f"    {mag} [{d.type.value}] {d.detail}")
-    else:
-        lines.append("\n  偏差: 无 — 达利欧与市场一致")
-
-    # 反身性
+    narrative_labels = {
+        MarketNarrative.RISK_ON: "风险偏好 (Risk On)",
+        MarketNarrative.RISK_OFF: "风险厌恶 (Risk Off)",
+        MarketNarrative.INFLATION_FEAR: "通胀恐惧",
+        MarketNarrative.DEFLATION_FEAR: "通缩恐惧",
+        MarketNarrative.COMPLACENCY: "市场自满",
+        MarketNarrative.PANIC: "市场恐慌",
+        MarketNarrative.AMBIGUOUS: "不明确",
+    }
     phase_labels = {
-        ReflexivityPhase.EARLY_SELF_REINFORCING: "早期自我强化",
-        ReflexivityPhase.LATE_SELF_REINFORCING: "晚期自我强化",
+        ReflexivityPhase.EARLY_TREND: "早期趋势",
+        ReflexivityPhase.SELF_REINFORCING: "自我强化中",
+        ReflexivityPhase.LATE_STAGE: "晚期延伸",
         ReflexivityPhase.APPROACHING_CLIMAX: "接近极端",
         ReflexivityPhase.REVERSAL: "正在反转",
         ReflexivityPhase.NEUTRAL: "中性",
-        ReflexivityPhase.UNKNOWN: "未知",
     }
-    lines.append(f"\n  反身性: {phase_labels.get(result.reflexivity_phase, '?')}")
-    lines.append(f"    {result.reflexivity_detail}")
 
-    # Alpha 机会
-    if result.alpha_opportunities:
-        lines.append(f"\n  Alpha 机会 ({len(result.alpha_opportunities)}):")
-        for opp in result.alpha_opportunities:
-            arrow = "▲" if opp.direction == "overweight" else "▼"
-            lines.append(f"    {arrow} {opp.asset_type} (信心 {opp.conviction:.0%})")
-            lines.append(f"      论点: {opp.thesis}")
-            lines.append(f"      风险: {opp.risk}")
+    lines.append(f"\n  叙事: {narrative_labels.get(result.narrative, '?')}")
+    lines.append(f"    {result.narrative_detail}")
+    lines.append(f"  阶段: {phase_labels.get(result.phase, '?')}")
+    lines.append(f"    {result.phase_detail}")
 
-    lines.append(f"\n  ════════════════════════════════════════════════")
-    lines.append(f"  {result.conclusion}")
+    if result.overextension:
+        lines.append(f"\n  过度延伸:")
+        for asset, ext in sorted(result.overextension.items(), key=lambda x: -abs(x[1])):
+            bar = "+" * int(max(ext * 10, 0)) + "-" * int(max(-ext * 10, 0))
+            direction = "高估" if ext > 0 else "低估"
+            lines.append(f"    {asset:25s} {ext:+.2f} ({direction}) {bar}")
+
+    lines.append(f"\n  置信度: {result.confidence:.0%}")
     lines.append("")
     return "\n".join(lines)

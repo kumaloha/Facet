@@ -20,6 +20,9 @@ import sys
 import time
 from pathlib import Path
 
+# 确保 scripts/ 可以互相 import
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from loguru import logger
 
 SP500_CSV = Path(__file__).parent.parent / "data" / "sp500.csv"
@@ -72,20 +75,30 @@ async def batch_ingest(companies: list[dict], concurrency: int = 3):
 
     from scripts.ingest_company import ingest_company
 
-    # 串行入库：每家公司内部 MapReduce 已有 10 并发 LLM 调用，
-    # 多家同时跑会超通义 API 并发限制
+    sem = asyncio.Semaphore(concurrency)
     success = 0
     failed = []
+    lock = asyncio.Lock()
+    counter = 0
 
-    for i, company in enumerate(todo, 1):
-        ticker = company["ticker"]
-        logger.info(f"  [{i}/{len(todo)}] {ticker} — {company['name']}")
-        try:
-            await ingest_company(ticker, forms=["10-K"])
-            success += 1
-        except Exception as e:
-            logger.error(f"  [{ticker}] 失败: {e}")
-            failed.append(ticker)
+    async def _run_one(company: dict):
+        nonlocal success, counter
+        async with sem:
+            async with lock:
+                counter += 1
+                idx = counter
+            ticker = company["ticker"]
+            logger.info(f"  [{idx}/{len(todo)}] {ticker} — {company['name']}")
+            try:
+                await ingest_company(ticker, forms=["10-K"])
+                async with lock:
+                    success += 1
+            except Exception as e:
+                logger.error(f"  [{ticker}] 失败: {e}")
+                async with lock:
+                    failed.append(ticker)
+
+    await asyncio.gather(*[_run_one(c) for c in todo])
 
     logger.info(
         f"\n[Universe] 入库完成: 成功 {success}，失败 {len(failed)}"
