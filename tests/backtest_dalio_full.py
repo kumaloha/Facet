@@ -546,22 +546,27 @@ def backtest_dalio_full(
 
     current_weights = {k: v * leverage for k, v in base_aw.items()}
 
+    # 达利欧基础权重 (季度更新)
+    dalio_base_weights = dict(base_aw)
+    # 索罗斯状态延续
+    soros_prior_phase = None
+    force_dirs = None
+
     for i, month in enumerate(months):
         rets = MONTHLY_RETURNS[month]
 
-        # 再平衡
+        # ── 达利欧层: 季度再平衡 (大周期+PA) ──
         if i % rebalance_freq == 0:
             macro_d, internal_d, external_d, nature_d, tech_d = \
                 build_monthly_forces_data(fred, month)
             all_data = macro_d | internal_d | external_d | tech_d
 
             if strategy == "aw_only":
-                weights = dict(base_aw)
+                dalio_base_weights = dict(base_aw)
             elif strategy == "aw_cycle":
-                weights = apply_big_cycle_tilts(base_aw, all_data)
+                dalio_base_weights = apply_big_cycle_tilts(base_aw, all_data)
             elif strategy in ("aw_cycle_alpha", "aw_cycle_alpha_soros"):
-                weights = apply_big_cycle_tilts(base_aw, all_data)
-                force_dirs = None
+                dalio_base_weights = apply_big_cycle_tilts(base_aw, all_data)
                 try:
                     view = build_five_forces_view(
                         macro_data=macro_d, internal_data=internal_d,
@@ -579,9 +584,9 @@ def backtest_dalio_full(
                         fiscal_deficit_to_gdp=internal_d.get("fiscal_deficit_to_gdp"),
                     )
                     graph = _propagate_causal_graph(macro_ctx)
-                    weights = apply_pure_alpha(weights, view, graph.nodes, all_data)
+                    dalio_base_weights = apply_pure_alpha(
+                        dalio_base_weights, view, graph.nodes, all_data)
 
-                    # 构造达利欧力量方向 (供索罗斯对比用)
                     dir_map = {
                         ForceDirection.STRONGLY_POSITIVE: 1.0,
                         ForceDirection.POSITIVE: 0.5,
@@ -593,18 +598,44 @@ def backtest_dalio_full(
                 except Exception:
                     pass
 
-                # 索罗斯叠加
-                if strategy == "aw_cycle_alpha_soros":
-                    try:
-                        mkt, _ = build_market_state(
-                            MONTHLY_RETURNS, fred, MONTHLY_SIGNALS, month, force_dirs
-                        )
-                        weights = apply_soros_overlay(weights, mkt, force_dirs)
-                    except Exception:
-                        pass
+        # ── 索罗斯层: 月度再平衡 (独立于达利欧的频率) ──
+        weights = dict(dalio_base_weights)
+        if strategy == "aw_cycle_alpha_soros":
+            try:
+                from polaris.chains.soros import ReflexivityPhase
+                mkt, _ = build_market_state(
+                    MONTHLY_RETURNS, fred, MONTHLY_SIGNALS, month, force_dirs
+                )
+                insight = evaluate_soros(mkt, force_directions=force_dirs,
+                                         prior_phase=soros_prior_phase)
+                soros_prior_phase = insight.phase  # 状态传递
+                weights = apply_soros_overlay(weights, mkt, force_dirs)
+                # 用带状态的 insight 重算 overlay
+                ts = insight.trade_signal
+                if ts:
+                    weights = dict(dalio_base_weights)
+                    for asset, ride_w in ts.ride_assets.items():
+                        if asset in weights:
+                            weights[asset] += ride_w * SOROS_MAX_TILT
+                    for asset, hedge_w in ts.hedge_assets.items():
+                        if asset in ("gold", "long_term_bond", "intermediate_bond"):
+                            if asset in weights:
+                                weights[asset] += hedge_w * SOROS_MAX_TILT
+                        else:
+                            if asset in weights:
+                                weights[asset] = max(0, weights[asset] - hedge_w * SOROS_MAX_TILT)
+                    if insight.reflexivity_feedback and insight.reflexivity_feedback.fragility > 0.5:
+                        frag = insight.reflexivity_feedback.fragility
+                        scale = max(0.8, 1 - (frag - 0.5) * 0.15)
+                        weights = {k: v * scale for k, v in weights.items()}
+                    total = sum(weights.values())
+                    if total > 0:
+                        weights = {k: v / total for k, v in weights.items()}
+            except Exception:
+                pass
 
-            current_weights = {k: v * leverage for k, v in weights.items()}
-            weight_history.append((month, dict(current_weights)))
+        current_weights = {k: v * leverage for k, v in weights.items()}
+        weight_history.append((month, dict(current_weights)))
 
         # 计算月回报
         signals = MONTHLY_SIGNALS.get(month, {})

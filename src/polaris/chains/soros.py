@@ -755,6 +755,7 @@ def _compute_trade_signal(
         signal.hedge_assets[asset] = round(hedge_weight, 2)
 
     # 来源2: 现实偏差 → 做空被忽视的风险
+    significant_gaps = []
     if all_gaps:
         significant_gaps = [g for g in all_gaps if abs(g.gap) > 0.3]
         for gap in significant_gaps[:2]:  # 最多2个偏差交易
@@ -1106,6 +1107,7 @@ def _detect_divergences(market: MarketState) -> list[Divergence]:
 def evaluate_soros(
     market: MarketState,
     force_directions: dict[int, float] | None = None,
+    prior_phase: ReflexivityPhase | None = None,
 ) -> SorosInsight:
     """索罗斯认知链主入口。
 
@@ -1114,15 +1116,14 @@ def evaluate_soros(
     Args:
         market: 纯市场数据
         force_directions: 达利欧五力方向 {force_id: -1到+1}
-            如果传入，计算市场信念 vs 现实的偏差（反身性机会）
-            如果不传，只做纯市场分析（独立运行）
+        prior_phase: 上一期的反身性阶段 (状态延续用)
+            如果上期是 CLIMAX/SNIPE, 不会轻易回退到 ride
 
-    force_directions 转换方式:
-        strongly_negative → -1.0
-        negative → -0.5
-        neutral → 0.0
-        positive → +0.5
-        strongly_positive → +1.0
+    状态延续规则 (索罗斯不会因为一个月的假信号就放弃判断):
+      CLIMAX → 只能去 REVERSAL/SNIPE 或停留, 不能回 RIDE
+      LATE_STAGE → 只能去 CLIMAX/REVERSAL 或停留, 不能回 EARLY
+      REVERSAL → 只能去 NEUTRAL 或停留
+      恢复到 RIDE 需要: 3月动量转正 + VIX回落 + 利差收窄
     """
     result = SorosInsight()
 
@@ -1147,6 +1148,48 @@ def evaluate_soros(
 
     # 反身性阶段
     result.phase, result.phase_detail = _assess_reflexivity(market, result.narrative)
+
+    # 状态延续: 防止从高危状态因一个月假信号回退
+    if prior_phase is not None:
+        new_phase = result.phase
+        # CLIMAX 不能直接回 ride/early — 必须看到趋势真正恢复
+        if prior_phase == ReflexivityPhase.APPROACHING_CLIMAX:
+            if new_phase in (ReflexivityPhase.EARLY_TREND, ReflexivityPhase.SELF_REINFORCING):
+                # 检查恢复条件: 3月动量转正 + VIX 回落
+                mom3 = market.momentum_equity_3m
+                vix = market.vix
+                recovered = (mom3 is not None and mom3 > 3 and
+                             vix is not None and vix < 18)
+                if not recovered:
+                    result.phase = ReflexivityPhase.LATE_STAGE
+                    result.phase_detail = (
+                        f"[状态锁定] 上期CLIMAX, 当前数据说'{new_phase.value}', "
+                        f"但恢复条件未满足(需3M动量>3%+VIX<18) → 保持LATE"
+                    )
+        # LATE_STAGE 不能回 EARLY
+        elif prior_phase == ReflexivityPhase.LATE_STAGE:
+            if new_phase == ReflexivityPhase.EARLY_TREND:
+                mom3 = market.momentum_equity_3m
+                if mom3 is None or mom3 < 5:
+                    result.phase = ReflexivityPhase.LATE_STAGE
+                    result.phase_detail = (
+                        f"[状态锁定] 上期LATE, 恢复条件未满足 → 保持LATE"
+                    )
+        # REVERSAL 不能直接回 RIDE
+        elif prior_phase == ReflexivityPhase.REVERSAL:
+            if new_phase in (ReflexivityPhase.EARLY_TREND, ReflexivityPhase.SELF_REINFORCING):
+                mom3 = market.momentum_equity_3m
+                vix = market.vix
+                spread_chg = market.credit_spread_change_3m
+                recovered = (mom3 is not None and mom3 > 5 and
+                             vix is not None and vix < 20 and
+                             (spread_chg is None or spread_chg < 0))
+                if not recovered:
+                    result.phase = ReflexivityPhase.NEUTRAL
+                    result.phase_detail = (
+                        f"[状态锁定] 上期REVERSAL, 全面恢复条件未满足 → NEUTRAL"
+                    )
+
     result.evidence.append(f"反身性: {result.phase.value} — {result.phase_detail}")
 
     # 过度延伸
