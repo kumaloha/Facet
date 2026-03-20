@@ -95,47 +95,141 @@ class FiveForcesView:
 
 
 def assess_force1_debt_cycle(macro_data: dict) -> ForceAssessment:
-    """Force 1: 债务/信贷周期。委托给现有因果引擎。"""
+    """Force 1: 债务/信贷周期。
+
+    两层判断:
+      总量层: GDP/CPI/利率/信贷增速 → 周期位置
+      结构层: 房贷逾期率/金融杠杆/贷款标准/家庭偿付比 → 脆弱度
+
+    总量指标看起来正常但结构指标恶化 = 最危险的状态（2007）。
+    """
     f = ForceAssessment(force_name="债务/信贷周期", force_id=1)
+    d = macro_data
 
-    # 指标
-    mappings = [
-        ("fed_funds_rate", "基准利率", "%"),
-        ("credit_growth", "信贷增速", "%"),
-        ("total_debt_to_gdp", "总债务/GDP", "%"),
-        ("unemployment_rate", "失业率", "%"),
-        ("cpi_actual", "CPI", "%"),
-        ("gdp_growth_actual", "GDP增速", "%"),
+    # ── 总量指标 ──
+    total_mappings = [
+        ("fed_funds_rate", "基准利率", "%", ""),
+        ("credit_growth", "信贷增速", "%", ""),
+        ("total_debt_to_gdp", "总债务/GDP", "%", ">300%=高杠杆经济体"),
+        ("unemployment_rate", "失业率", "%", ""),
+        ("cpi_actual", "CPI", "%", ""),
+        ("gdp_growth_actual", "GDP增速", "%", ""),
     ]
-    for key, name, unit in mappings:
-        val = macro_data.get(key)
+    for key, name, unit, ctx in total_mappings:
+        val = d.get(key)
         if val is not None:
-            f.indicators.append(Indicator(name=name, value=val, unit=unit))
+            f.indicators.append(Indicator(name=name, value=val, unit=unit, context=ctx))
 
-    # 系统判断（简化版——完整版在 dalio.py 因果引擎）
-    gdp = macro_data.get("gdp_growth_actual", 0)
-    credit = macro_data.get("credit_growth", 0)
-    cpi = macro_data.get("cpi_actual", 0)
+    # ── 结构指标（2007 case 发现的关键数据）──
+    structural_mappings = [
+        ("mortgage_delinquency", "房贷逾期率", "%",
+         "信贷质量最直接的指标。>4%=压力显现, >8%=危机"),
+        ("mortgage_debt_service", "房贷偿付比/收入", "%",
+         "家庭用多少收入还房贷。>7%=负担重"),
+        ("household_debt_gdp", "家庭债务/GDP", "%",
+         "家庭整体杠杆。>80%=历史高位"),
+        ("financial_leverage", "金融杠杆指数", "",
+         "芝加哥联储子指数。>0=杠杆高于均值, >1=极端"),
+        ("lending_standards", "贷款标准收紧%", "%",
+         "银行在收紧贷款吗？>20%=显著收紧, >40%=恐慌性收紧。"
+         "这是最前瞻的指标——银行先收紧,然后信贷才收缩"),
+        ("case_shiller_hpi", "Case-Shiller房价指数", "",
+         "房价走势。同比下跌=泡沫破裂信号"),
+    ]
+    structural_count = 0
+    for key, name, unit, ctx in structural_mappings:
+        val = d.get(key)
+        if val is not None:
+            structural_count += 1
+            f.indicators.append(Indicator(name=name, value=val, unit=unit, context=ctx))
 
+    # ── 系统判断: 总量 + 结构 综合 ──
+    gdp = d.get("gdp_growth_actual", 0)
+    credit = d.get("credit_growth", 0)
+    cpi = d.get("cpi_actual", 0)
+
+    # 总量判断
     if gdp < 0 and credit < 0:
-        f.system_direction = ForceDirection.STRONGLY_NEGATIVE
-        f.system_reasoning = f"GDP {gdp}% + 信贷 {credit}% = 衰退+信贷收缩"
+        total_signal = "衰退+信贷收缩"
+        total_score = -2
     elif gdp < 1 or credit < 0:
-        f.system_direction = ForceDirection.NEGATIVE
-        f.system_reasoning = "增长放缓或信贷收缩"
+        total_signal = "增长放缓或信贷收缩"
+        total_score = -1
     elif gdp > 3 and credit > 5:
+        total_signal = f"GDP {gdp}%+信贷扩张=扩张期"
+        total_score = 1
+    else:
+        total_signal = "周期中段"
+        total_score = 0
+
+    # 结构判断（红旗计数）
+    red_flags = []
+    delinquency = d.get("mortgage_delinquency")
+    if delinquency is not None and delinquency > 4:
+        red_flags.append(f"房贷逾期率{delinquency}%")
+    fin_leverage = d.get("financial_leverage")
+    if fin_leverage is not None and fin_leverage > 0.5:
+        red_flags.append(f"金融杠杆指数{fin_leverage:+.1f}(高于均值)")
+    lending_std = d.get("lending_standards")
+    if lending_std is not None and lending_std > 20:
+        red_flags.append(f"贷款标准收紧{lending_std}%")
+    hh_debt = d.get("household_debt_gdp")
+    if hh_debt is not None and hh_debt > 80:
+        red_flags.append(f"家庭债务/GDP {hh_debt}%(历史高位)")
+    mort_service = d.get("mortgage_debt_service")
+    if mort_service is not None and mort_service > 7:
+        red_flags.append(f"房贷偿付比{mort_service}%(负担重)")
+
+    # 综合: 总量 × 结构
+    if len(red_flags) >= 3:
+        f.system_direction = ForceDirection.STRONGLY_NEGATIVE
+        f.system_reasoning = f"结构性风险极端({len(red_flags)}个红旗): {'; '.join(red_flags[:3])}"
+        f.system_confidence = 0.9
+    elif len(red_flags) >= 1:
+        if total_score >= 0:
+            f.system_direction = ForceDirection.NEGATIVE
+            f.system_reasoning = f"表面正常但结构恶化: 总量={total_signal}, 但{'; '.join(red_flags)}"
+            f.system_confidence = 0.7
+            f.system_contradictions.append(
+                f"总量指标说'{total_signal}'但结构指标有{len(red_flags)}个红旗——"
+                "这是最危险的状态(泡沫顶部总量指标总是滞后)")
+        else:
+            f.system_direction = ForceDirection.STRONGLY_NEGATIVE
+            f.system_reasoning = f"总量恶化+结构恶化: {total_signal} + {'; '.join(red_flags)}"
+            f.system_confidence = 0.85
+    elif total_score <= -2:
+        f.system_direction = ForceDirection.STRONGLY_NEGATIVE
+        f.system_reasoning = f"总量严重恶化: {total_signal}"
+        f.system_confidence = 0.7
+    elif total_score < 0:
+        f.system_direction = ForceDirection.NEGATIVE
+        f.system_reasoning = total_signal
+        f.system_confidence = 0.6
+    elif total_score > 0:
         f.system_direction = ForceDirection.POSITIVE
-        f.system_reasoning = f"GDP {gdp}% + 信贷扩张 = 扩张期"
+        f.system_reasoning = total_signal
+        f.system_confidence = 0.6
     else:
         f.system_direction = ForceDirection.NEUTRAL
-        f.system_reasoning = "周期中段"
+        f.system_reasoning = total_signal
+        f.system_confidence = 0.5
 
+    # 高亮
     if cpi > 5:
         f.system_highlights.append(f"⚠ 通胀 {cpi}% 远超目标")
     if credit < -3:
         f.system_highlights.append(f"⚠ 信贷收缩 {credit}% — 历史上常伴随衰退")
+    if lending_std is not None and lending_std > 30:
+        f.system_highlights.append(
+            f"⚠ 银行贷款标准大幅收紧({lending_std}%) — 这是信贷危机的前兆")
+    if delinquency is not None and delinquency > 6:
+        f.system_highlights.append(
+            f"⚠ 房贷逾期率 {delinquency}% — 房地产信贷质量严重恶化")
 
-    f.system_confidence = 0.7  # 债务周期是我们最成熟的模块
+    if structural_count == 0:
+        f.system_highlights.append(
+            "注: 缺少结构性数据(逾期率/杠杆/贷款标准)——仅靠总量判断，信心有限")
+
     return f
 
 

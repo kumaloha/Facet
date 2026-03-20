@@ -55,13 +55,16 @@ async def ingest_company(ticker: str, forms: list[str] | None = None):
         logger.info(f"  {ticker} | {form} → {doc_type}")
         logger.info(f"{'='*60}")
 
-        # 下载
-        filings = c.get_filings(form=form)
+        # 下载（amendments=False 避免取到 10-K/A 修正案，修正案 XBRL 数据不完整）
+        filings = c.get_filings(form=form, amendments=False)
+        if not filings or len(filings) == 0:
+            # fallback: 含修正案
+            filings = c.get_filings(form=form)
         if not filings:
             logger.warning(f"  无 {form} 文件")
             continue
 
-        latest = filings[0]
+        latest = filings.latest(1)
         logger.info(f"  Filing: {latest.filing_date} | {latest.accession_no}")
 
         doc = latest.document

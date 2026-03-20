@@ -27,14 +27,24 @@ from loguru import logger
 
 CONCEPT_MAP: list[tuple[str, str, str, bool]] = [
     # ── Income Statement (duration) ──
+    # Revenue: 按优先级，覆盖科技/零售/银行/公用事业/保险
     ("RevenueFromContractWithCustomerExcludingAssessedTax", "revenue", "income", False),
+    ("RevenueFromContractWithCustomerIncludingAssessedTax", "revenue", "income", False),
     ("Revenues", "revenue", "income", False),
     ("SalesRevenueNet", "revenue", "income", False),
+    ("InterestAndDividendIncomeOperating", "revenue", "income", False),  # 银行
+    ("InterestIncomeExpenseNet", "revenue", "income", False),            # 银行 (net interest)
+    ("RegulatedAndUnregulatedOperatingRevenue", "revenue", "income", False),  # 公用事业
+    ("RegulatedOperatingRevenue", "revenue", "income", False),                # 公用事业
+    ("OperatingLeasesIncomeStatementLeaseRevenue", "revenue", "income", False),  # REIT
+    ("PremiumsEarnedNet", "revenue", "income", False),                   # 保险
+    ("OperatingRevenue", "revenue", "income", False),                    # 通用 fallback
     ("CostOfGoodsAndServicesSold", "cost_of_revenue", "income", False),
     ("CostOfRevenue", "cost_of_revenue", "income", False),
     ("OperatingIncomeLoss", "operating_income", "income", False),
     ("NetIncomeLoss", "net_income", "income", False),
     ("InterestExpense", "interest_expense", "income", False),
+    ("InterestExpenseNonoperating", "interest_expense", "income", False),
     ("SellingGeneralAndAdministrativeExpense", "sga_expense", "income", False),
     ("ResearchAndDevelopmentExpense", "rnd_expense", "income", False),
     ("IncomeTaxExpenseBenefit", "income_tax_expense_total", "income", False),

@@ -227,7 +227,14 @@ FRED_SERIES: dict[str, str] = {
     "industrial_production": "INDPRO",    # 工业产出指数 (月度, 指数 → 需算 YoY)
     "housing_starts": "HOUST",            # 新屋开工 (月度, 千)
     "m2_growth": "M2SL",                  # M2 货币供应 (月度, 十亿$ → 需算 YoY)
-    # 市场隐含预期（索罗斯链需要）
+    # Force 1 结构性指标（2007 case 发现的关键缺失）
+    "mortgage_debt_service": "MDSP",      # 房贷偿付比/可支配收入 (季度, %)
+    "mortgage_delinquency": "DRSFRMACBS", # 房贷逾期率 (季度, %) — 信贷质量最直接指标
+    "case_shiller_hpi": "CSUSHPISA",      # Case-Shiller 房价指数 (月度) — 泡沫检测
+    "financial_leverage": "NFCILEVERAGE", # 芝加哥联储金融杠杆子指数 (周度) — 系统性杠杆
+    "lending_standards": "DRTSCILM",      # 银行贷款标准收紧% (季度) — 最前瞻的信贷指标
+    "household_debt_gdp": "HDTGPDUSQ163N", # 家庭债务/GDP (季度, %)
+    # 市场隐含预期（索罗斯认知需要）
     "breakeven_inflation_5y": "T5YIE",     # 5 年期 breakeven 通胀率 (日度, %)
     "breakeven_inflation_10y": "T10YIE",   # 10 年期 breakeven 通胀率 (日度, %)
     "credit_spread_ig": "BAMLC0A0CM",      # 投资级信用利差 (日度, %)
