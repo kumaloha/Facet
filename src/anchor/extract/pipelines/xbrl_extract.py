@@ -38,11 +38,14 @@ CONCEPT_MAP: list[tuple[str, str, str, bool]] = [
     ("RegulatedOperatingRevenue", "revenue", "income", False),                # 公用事业
     ("OperatingLeasesIncomeStatementLeaseRevenue", "revenue", "income", False),  # REIT
     ("PremiumsEarnedNet", "revenue", "income", False),                   # 保险
+    ("RevenuesAndOther", "revenue", "income", False),                     # 石油 (APA)
     ("OperatingRevenue", "revenue", "income", False),                    # 通用 fallback
     ("CostOfGoodsAndServicesSold", "cost_of_revenue", "income", False),
     ("CostOfRevenue", "cost_of_revenue", "income", False),
     ("OperatingIncomeLoss", "operating_income", "income", False),
     ("NetIncomeLoss", "net_income", "income", False),
+    ("ProfitLoss", "net_income", "income", False),                       # AVGO/MA/CAT 等
+    ("NetIncomeLossAvailableToCommonStockholdersBasic", "net_income", "income", False),  # BKNG
     ("InterestExpense", "interest_expense", "income", False),
     ("InterestExpenseNonoperating", "interest_expense", "income", False),
     ("SellingGeneralAndAdministrativeExpense", "sga_expense", "income", False),
