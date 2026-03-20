@@ -177,6 +177,29 @@ class MacroContext:
     # 国别 profile（影响因果引擎权重）
     country: str = "US"                           # US / JP / EU / CN
 
+    # ── 替代数据三角验证（官方数据可能失真的市场通用）──
+    # 原则: 用多个独立、难以操纵的数据源交叉验证官方统计
+    #
+    # 物理活动指标（难以伪造，反映真实经济产出）
+    alt_electricity_growth: float | None = None     # 发电量/用电量同比 (%)
+    alt_freight_growth: float | None = None         # 货运量同比 (%) — 铁路/公路/港口
+    alt_cement_steel_growth: float | None = None    # 水泥+钢铁产量同比 (%) — 工业/基建代理
+    # 贸易验证（可被交易对手国交叉验证）
+    alt_export_growth: float | None = None          # 出口同比 (%)
+    alt_import_growth: float | None = None          # 进口同比 (%) — 最难伪造（对手国有记录）
+    # 消费验证（微观高频数据）
+    alt_auto_sales_growth: float | None = None      # 汽车销量同比 (%)
+    alt_retail_pmi: float | None = None             # 零售/服务业 PMI（如财新服务业 PMI）
+    # 房地产（新兴市场通用的关键风险部门）
+    alt_property_investment_growth: float | None = None  # 房地产/建筑投资同比 (%)
+    alt_property_sales_growth: float | None = None      # 房屋销售面积/金额同比 (%)
+    alt_land_revenue_growth: float | None = None        # 土地出让/拍卖收入同比 (%)
+    # 信贷真实规模（含表外/影子银行）
+    alt_broad_credit_growth: float | None = None    # 广义信贷同比 (%) — 社融/含影子银行
+    # 资本流动（金融市场信号）
+    alt_fx_reserve_change: float | None = None      # 外汇储备变化 (十亿$, 负=外流)
+    alt_capital_flow: float | None = None           # 资本账户净流入 (十亿$, 负=外流)
+
     # 快照时间
     snapshot_date: str = ""                       # YYYY-MM-DD
 
@@ -1289,8 +1312,120 @@ MAX_FEEDBACK_ITERATIONS = 3
 DAMPING_FACTOR = 0.5
 
 
+def _apply_data_triangulation(macro: MacroContext) -> MacroContext:
+    """替代数据三角验证: 用多个独立数据源交叉验证官方统计。
+
+    适用于任何可能存在数据失真的市场（中国、越南、印度等）。
+
+    原则:
+    1. 物理活动不可伪造 — 发电量、货运量、水泥钢铁产量
+    2. 贸易对手可验证 — 中国的进口 = 其他国家的对华出口
+    3. 广义信贷 > 银行信贷 — 含影子银行/表外
+    4. 房地产是新兴市场的放大器 — 崩盘时拖累远超 GDP 反映
+    5. 多指标综合判断 — 不依赖任何单一指标
+    """
+    # 目前只对标记了替代数据的场景启用
+    has_alt = any(v is not None for v in (
+        macro.alt_electricity_growth, macro.alt_freight_growth,
+        macro.alt_import_growth, macro.alt_property_investment_growth,
+        macro.alt_broad_credit_growth,
+    ))
+    if not has_alt:
+        return macro
+
+    corrections: list[str] = []
+    profile = COUNTRY_PROFILES.get(macro.country, CountryProfile())
+
+    # ── 第 1 层: 物理活动指数 vs 官方 GDP ──
+    # 加权合成真实经济活动指数
+    activity_components: list[tuple[str, float, float]] = []
+    if macro.alt_electricity_growth is not None:
+        activity_components.append(("电力", macro.alt_electricity_growth, 0.30))
+    if macro.alt_freight_growth is not None:
+        activity_components.append(("货运", macro.alt_freight_growth, 0.25))
+    if macro.alt_cement_steel_growth is not None:
+        activity_components.append(("工业材料", macro.alt_cement_steel_growth, 0.20))
+    if macro.alt_import_growth is not None:
+        activity_components.append(("进口", macro.alt_import_growth, 0.25))
+
+    if len(activity_components) >= 2 and macro.gdp_growth_actual is not None:
+        total_w = sum(w for _, _, w in activity_components)
+        activity_index = sum(v * w for _, v, w in activity_components) / total_w
+        official_gdp = macro.gdp_growth_actual
+
+        gap = official_gdp - activity_index
+        if abs(gap) > 2.0:
+            # 官方 GDP 向真实活动靠拢（不完全替换，混合）
+            corrected = official_gdp - gap * 0.5
+            sources = ", ".join(f"{n}{v:+.0f}%" for n, v, _ in activity_components)
+            corrections.append(f"GDP: 官方{official_gdp:.1f}% vs 活动指数{activity_index:.1f}% ({sources}) → {corrected:.1f}%")
+            macro.gdp_growth_actual = corrected
+
+    # ── 第 2 层: 广义信贷替代银行信贷 ──
+    if macro.alt_broad_credit_growth is not None and macro.credit_growth is not None:
+        corrections.append(f"信贷: 银行{macro.credit_growth:.1f}% → 广义{macro.alt_broad_credit_growth:.1f}%")
+        macro.credit_growth = macro.alt_broad_credit_growth
+
+    # ── 第 3 层: 房地产部门修正 ──
+    property_signals: list[float] = []
+    if macro.alt_property_investment_growth is not None:
+        property_signals.append(macro.alt_property_investment_growth)
+    if macro.alt_property_sales_growth is not None:
+        property_signals.append(macro.alt_property_sales_growth)
+    if macro.alt_land_revenue_growth is not None:
+        property_signals.append(macro.alt_land_revenue_growth)
+
+    if property_signals and macro.gdp_growth_actual is not None:
+        avg_property = sum(property_signals) / len(property_signals)
+        sensitivity = profile.property_sensitivity
+        if avg_property < -10.0:
+            # 房地产严重下滑 → GDP 下调
+            drag = avg_property * sensitivity * 0.1
+            macro.gdp_growth_actual += drag
+            corrections.append(f"房地产拖累: 均值{avg_property:.0f}% × 敏感度{sensitivity:.1f} → GDP {drag:+.1f}pp")
+
+    # ── 第 4 层: 贸易交叉验证 ──
+    if (macro.alt_import_growth is not None
+        and macro.gdp_growth_actual is not None
+        and macro.alt_import_growth < -5.0
+        and macro.gdp_growth_actual > 3.0):
+        macro.gdp_growth_actual *= 0.8
+        corrections.append(f"交叉验证: 进口{macro.alt_import_growth:.0f}% 但 GDP {macro.gdp_growth_actual/.8:.1f}% → 下调20%")
+
+    # ── 第 5 层: 全面恶化综合检测 ──
+    distress_signals: list[str] = []
+    if macro.alt_electricity_growth is not None and macro.alt_electricity_growth < 2.0:
+        distress_signals.append(f"电力{macro.alt_electricity_growth:.0f}%")
+    if macro.alt_freight_growth is not None and macro.alt_freight_growth < 0:
+        distress_signals.append(f"货运{macro.alt_freight_growth:.0f}%")
+    if macro.alt_import_growth is not None and macro.alt_import_growth < -5.0:
+        distress_signals.append(f"进口{macro.alt_import_growth:.0f}%")
+    if macro.alt_property_investment_growth is not None and macro.alt_property_investment_growth < -5.0:
+        distress_signals.append(f"地产投资{macro.alt_property_investment_growth:.0f}%")
+    if macro.alt_land_revenue_growth is not None and macro.alt_land_revenue_growth < -15.0:
+        distress_signals.append(f"土地收入{macro.alt_land_revenue_growth:.0f}%")
+    if macro.alt_property_sales_growth is not None and macro.alt_property_sales_growth < -15.0:
+        distress_signals.append(f"房销{macro.alt_property_sales_growth:.0f}%")
+    if macro.alt_auto_sales_growth is not None and macro.alt_auto_sales_growth < -10.0:
+        distress_signals.append(f"汽车{macro.alt_auto_sales_growth:.0f}%")
+    if macro.alt_capital_flow is not None and macro.alt_capital_flow < -50.0:
+        distress_signals.append(f"资本外流{macro.alt_capital_flow:.0f}B$")
+
+    if len(distress_signals) >= 3 and macro.gdp_growth_actual is not None and macro.gdp_growth_actual > 0:
+        corrections.append(f"⚠ {len(distress_signals)} 个恶化信号: {'; '.join(distress_signals)}")
+        macro.gdp_growth_actual = max(macro.gdp_growth_actual * 0.3, -2.0)
+        corrections.append(f"GDP 强制下调至 {macro.gdp_growth_actual:.1f}%")
+
+    if corrections:
+        macro._china_corrections = corrections  # type: ignore
+
+    return macro
+
+
 def _propagate_causal_graph(macro: MacroContext) -> CausalGraphResult:
     """因果传导引擎主函数: 前向计算 + 反馈循环 + 资产影响映射。"""
+    # 替代数据三角验证（任何有替代数据的市场）
+    macro = _apply_data_triangulation(macro)
     # 第 0 轮: 前向计算所有节点
     debt_service = _compute_debt_service_burden(macro)
     credit_avail = _compute_credit_availability(macro)
@@ -1526,57 +1661,58 @@ def _compute_asset_impacts(
 
 
 def _project_macro(macro: MacroContext, steps: int = 2) -> MacroContext:
-    """投射未来宏观状态: 用轨迹信号线性外推 N 步。
+    """投射未来宏观状态: 用轨迹信号阻尼外推 N 步。
 
     达利欧的核心: 不看现在在哪，看按这个轨迹走下去会到哪。
     steps=2 ≈ 6 个月（2 个季度）。
+
+    用阻尼外推而非线性外推: 趋势每一步衰减 50%。
+    这防止极端动量（如 CPI 每季度 -2pp）产生不合理的投射值（如 CPI=1.6%）。
     """
+    DAMPING = 0.5  # 每步衰减 50%
     projected = MacroContext(
         gdp_growth_expected=macro.gdp_growth_expected,
         cpi_expected=macro.cpi_expected,
         snapshot_date=macro.snapshot_date,
     )
 
-    # GDP: 按动量外推
-    if macro.gdp_growth_actual is not None:
-        delta = (macro.gdp_momentum or 0.0) * steps
-        projected.gdp_growth_actual = macro.gdp_growth_actual + delta
-        projected.gdp_momentum = macro.gdp_momentum  # 保持动量方向
+    def _damped_projection(current: float, momentum: float | None, n: int) -> float:
+        """阻尼外推: 每步衰减，防止极端值。"""
+        if momentum is None:
+            return current
+        total_delta = 0.0
+        for i in range(n):
+            total_delta += momentum * (DAMPING ** i)
+        return current + total_delta
 
-    # 信贷: 按脉冲外推
+    # GDP: 按动量阻尼外推
+    if macro.gdp_growth_actual is not None:
+        projected.gdp_growth_actual = _damped_projection(
+            macro.gdp_growth_actual, macro.gdp_momentum, steps)
+        projected.gdp_momentum = macro.gdp_momentum
+
+    # 信贷: 按脉冲阻尼外推
     if macro.credit_growth is not None:
-        delta = (macro.credit_impulse or 0.0) * steps
-        projected.credit_growth = macro.credit_growth + delta
+        projected.credit_growth = _damped_projection(
+            macro.credit_growth, macro.credit_impulse, steps)
         projected.credit_impulse = macro.credit_impulse
 
-    # CPI: 按动量外推
+    # CPI: 按动量阻尼外推，且不低于 -1%（通缩有下界）
     if macro.cpi_actual is not None:
-        delta = (macro.inflation_momentum or 0.0) * steps
-        projected.cpi_actual = macro.cpi_actual + delta
+        projected.cpi_actual = max(-1.0, _damped_projection(
+            macro.cpi_actual, macro.inflation_momentum, steps))
         projected.inflation_momentum = macro.inflation_momentum
 
-    # 利率: 按方向外推
+    # 利率: 按方向阻尼外推
     if macro.fed_funds_rate is not None:
-        rate_delta = (macro.rate_direction or 0.0) * steps
+        projected.fed_funds_rate = max(0.0, _damped_projection(
+            macro.fed_funds_rate, macro.rate_direction, steps))
+        projected.rate_direction = macro.rate_direction
 
-        # QE 成熟期特殊处理: 利率零下界 + VIX 低 + 信贷减速
-        # → 投射 "QE 退出/taper" 为等效加息
-        # taper 的市场冲击远大于普通加息 — 因为 QE 压缩了利率 200-300bp
-        # taper = 释放这些压缩 → 等效加息幅度大
-        if (macro.fed_funds_rate < 0.5
-            and macro.vix is not None and macro.vix < 20
-            and macro.credit_impulse is not None and macro.credit_impulse < 0):
-            rate_delta += 1.5 * steps  # taper ≈ 每步等效加息 1.5%
-            projected.rate_direction = 1.5  # 标记方向为显著收紧
-
-        projected.fed_funds_rate = max(0.0, macro.fed_funds_rate + rate_delta)
-        if projected.rate_direction is None:
-            projected.rate_direction = macro.rate_direction
-
-    # 失业率: 按方向外推
+    # 失业率: 按方向阻尼外推
     if macro.unemployment_rate is not None:
-        delta = (macro.unemployment_direction or 0.0) * steps
-        projected.unemployment_rate = max(0.0, macro.unemployment_rate + delta)
+        projected.unemployment_rate = max(0.0, _damped_projection(
+            macro.unemployment_rate, macro.unemployment_direction, steps))
         projected.unemployment_direction = macro.unemployment_direction
 
     # 非轨迹字段直接复制
@@ -1593,7 +1729,7 @@ def _project_macro(macro: MacroContext, steps: int = 2) -> MacroContext:
 def _blend_asset_impacts(
     current: list[AssetImpact],
     projected: list[AssetImpact],
-    current_weight: float = 0.3,
+    current_weight: float = 0.5,
 ) -> list[AssetImpact]:
     """混合当前和投射的资产影响，用相对排名决定方向。"""
     proj_weight = 1.0 - current_weight
@@ -1662,12 +1798,12 @@ def _step_tilts(regime: CycleRegime, macro: MacroContext) -> tuple[ChainStep, li
         macro.inflation_momentum, macro.rate_direction,
     ))
 
-    if has_trajectory:
+    if has_trajectory and False:  # 投射暂停: 线性外推精度不够，等非线性投射模型就绪后启用
         projected = _project_macro(macro, steps=2)
         graph_future = _propagate_causal_graph(projected)
         blended_impacts = _blend_asset_impacts(
             graph_now.asset_impacts, graph_future.asset_impacts,
-            current_weight=0.3,
+            current_weight=0.5,
         )
 
         # Evidence: 当前 vs 投射对比

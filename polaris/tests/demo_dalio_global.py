@@ -9,7 +9,7 @@
 标注 [est] 的为合理估计值。
 """
 
-from polaris.chains.dalio import MacroContext, evaluate, format_dalio
+from polaris.chains.dalio import MacroContext, MacroSnapshot, evaluate, format_dalio
 
 
 GLOBAL_SCENARIOS = {
@@ -94,6 +94,16 @@ GLOBAL_SCENARIOS = {
             unemployment_rate=10.8,
             snapshot_date="1982-09-01",
         ),
+        "trajectory": [
+            # 利率在降、通胀在降: FFR 20→15→12, CPI 10.3→8.5→6.2
+            MacroSnapshot(date="1981-Q4", gdp_growth=-4.9, cpi=10.3, fed_funds_rate=20.0,
+                          credit_growth=2.0, unemployment_rate=8.5),    # [est]
+            MacroSnapshot(date="1982-Q1", gdp_growth=-6.4, cpi=8.5, fed_funds_rate=15.0,
+                          credit_growth=0.5, unemployment_rate=9.0),    # [est]
+            MacroSnapshot(date="1982-Q3", gdp_growth=-1.8, cpi=6.2, fed_funds_rate=12.0,
+                          credit_growth=-1.0, unemployment_rate=10.8,
+                          treasury_10y=12.3, treasury_2y=12.0, total_debt_to_gdp=130),
+        ],
         "expected_quadrant": "growth_down_inflation_down",
         "expected_winners": ["nominal_bond", "gold"],
         "expected_losers": ["equity_cyclical", "commodity"],
@@ -267,6 +277,16 @@ GLOBAL_SCENARIOS = {
             unemployment_rate=4.6,
             snapshot_date="2007-06-01",
         ),
+        "trajectory": [
+            # 信贷脉冲转负是关键信号：credit_growth 从 14→12→10 减速
+            MacroSnapshot(date="2006-Q2", gdp_growth=2.7, cpi=4.0, fed_funds_rate=5.25,
+                          credit_growth=14.0, unemployment_rate=4.6),
+            MacroSnapshot(date="2006-Q4", gdp_growth=2.0, cpi=2.5, fed_funds_rate=5.25,
+                          credit_growth=12.0, unemployment_rate=4.5),
+            MacroSnapshot(date="2007-Q2", gdp_growth=2.0, cpi=2.9, fed_funds_rate=5.25,
+                          credit_growth=10.0, unemployment_rate=4.6,
+                          treasury_10y=4.9, treasury_2y=4.9, total_debt_to_gdp=340),
+        ],
         "expected_quadrant": "growth_down_inflation_up",
         "expected_winners": ["commodity", "gold"],
         "expected_losers": ["nominal_bond", "equity_cyclical"],
@@ -289,6 +309,16 @@ GLOBAL_SCENARIOS = {
             unemployment_rate=7.2,    # 还在上升中
             snapshot_date="2008-12-01",
         ),
+        "trajectory": [
+            # 信贷崩溃加速: credit_growth 10→2→-5
+            MacroSnapshot(date="2008-Q1", gdp_growth=0.6, cpi=4.2, fed_funds_rate=3.0,
+                          credit_growth=10.0, unemployment_rate=4.9),  # [est] 贝尔斯登危机
+            MacroSnapshot(date="2008-Q2", gdp_growth=0.6, cpi=5.0, fed_funds_rate=2.0,
+                          credit_growth=2.0, unemployment_rate=5.5),
+            MacroSnapshot(date="2008-Q4", gdp_growth=-8.4, cpi=-0.4, fed_funds_rate=0.25,
+                          credit_growth=-5.0, unemployment_rate=7.2,
+                          treasury_10y=2.2, treasury_2y=0.8, total_debt_to_gdp=350, vix=80.0),
+        ],
         "expected_quadrant": "growth_down_inflation_down",
         "expected_winners": ["nominal_bond", "gold", "cash"],
         "expected_losers": ["equity_cyclical", "commodity"],
@@ -311,6 +341,16 @@ GLOBAL_SCENARIOS = {
             unemployment_rate=10.0,   # 10月峰值
             snapshot_date="2009-03-09",
         ),
+        "trajectory": [
+            # GDP 触底反弹，动量转正: -8.4 → -5.4 → -2.5
+            MacroSnapshot(date="2008-Q4", gdp_growth=-8.4, cpi=-0.4, fed_funds_rate=0.25,
+                          credit_growth=-5.0, unemployment_rate=7.2),
+            MacroSnapshot(date="2009-Q1", gdp_growth=-5.4, cpi=-0.2, fed_funds_rate=0.25,
+                          credit_growth=-4.0, unemployment_rate=8.5),
+            MacroSnapshot(date="2009-Q1-end", gdp_growth=-2.5, cpi=-0.3, fed_funds_rate=0.25,
+                          credit_growth=-3.0, unemployment_rate=10.0,
+                          treasury_10y=2.9, treasury_2y=0.9, total_debt_to_gdp=360, vix=46.0),
+        ],
         "expected_quadrant": "growth_down_inflation_down",
         "expected_winners": ["equity_cyclical", "nominal_bond", "gold"],
         "expected_losers": ["cash"],
@@ -399,6 +439,16 @@ GLOBAL_SCENARIOS = {
             unemployment_rate=13.0,
             snapshot_date="2020-06-01",
         ),
+        "trajectory": [
+            # GDP 极端负→V型反弹: 2.1 → -5.0 → -31.2
+            MacroSnapshot(date="2019-Q4", gdp_growth=2.1, cpi=2.3, fed_funds_rate=1.75,
+                          credit_growth=5.0, unemployment_rate=3.5),
+            MacroSnapshot(date="2020-Q1", gdp_growth=-5.0, cpi=1.5, fed_funds_rate=0.25,
+                          credit_growth=8.0, unemployment_rate=4.4),
+            MacroSnapshot(date="2020-Q2", gdp_growth=-31.2, cpi=0.1, fed_funds_rate=0.25,
+                          credit_growth=12.0, unemployment_rate=13.0,
+                          treasury_10y=0.7, treasury_2y=0.16, total_debt_to_gdp=380, vix=34.0),
+        ],
         "expected_quadrant": "growth_down_inflation_down",
         "expected_winners": ["nominal_bond", "gold", "equity_cyclical"],
         "expected_losers": ["commodity"],
@@ -421,6 +471,16 @@ GLOBAL_SCENARIOS = {
             unemployment_rate=3.5,
             snapshot_date="2022-09-01",
         ),
+        "trajectory": [
+            # 利率快速上升: FFR 0.25→1.75→3.25, CPI 7.9→9.1→8.3
+            MacroSnapshot(date="2022-Q1", gdp_growth=-1.6, cpi=7.9, fed_funds_rate=0.25,
+                          credit_growth=12.0, unemployment_rate=3.8),
+            MacroSnapshot(date="2022-Q2", gdp_growth=-0.6, cpi=9.1, fed_funds_rate=1.75,
+                          credit_growth=11.5, unemployment_rate=3.6),
+            MacroSnapshot(date="2022-Q3", gdp_growth=-0.6, cpi=8.3, fed_funds_rate=3.25,
+                          credit_growth=11.0, unemployment_rate=3.5,
+                          treasury_10y=3.8, treasury_2y=4.2, total_debt_to_gdp=350, vix=32.0),
+        ],
         "expected_quadrant": "growth_down_inflation_up",
         "expected_winners": ["commodity", "cash"],
         "expected_losers": ["nominal_bond", "equity_cyclical"],
@@ -469,6 +529,16 @@ GLOBAL_SCENARIOS = {
             unemployment_rate=2.1,
             snapshot_date="1990-10-01",
         ),
+        "trajectory": [
+            # 信贷从极热开始收缩: credit_growth 12→10→8, 利率猛升 4.25→5.25→6.0
+            MacroSnapshot(date="1989-Q4", gdp_growth=5.4, cpi=2.3, fed_funds_rate=4.25,
+                          credit_growth=12.0, unemployment_rate=2.3),   # 泡沫顶峰
+            MacroSnapshot(date="1990-Q1", gdp_growth=5.5, cpi=2.5, fed_funds_rate=5.25,
+                          credit_growth=10.0, unemployment_rate=2.1),   # [est]
+            MacroSnapshot(date="1990-Q3", gdp_growth=4.9, cpi=3.1, fed_funds_rate=6.0,
+                          credit_growth=8.0, unemployment_rate=2.1,
+                          total_debt_to_gdp=235),
+        ],
         "expected_quadrant": "growth_up_inflation_up",
         "expected_winners": ["cash", "gold"],
         "expected_losers": ["equity_cyclical"],
@@ -583,6 +653,16 @@ GLOBAL_SCENARIOS = {
             unemployment_rate=11.4,
             snapshot_date="2012-07-26",
         ),
+        "trajectory": [
+            # 经济恶化中: GDP 0.7→-0.3→-0.9, 失业率 10.6→11.0→11.4
+            MacroSnapshot(date="2011-Q4", gdp_growth=0.7, cpi=2.9, fed_funds_rate=1.0,
+                          credit_growth=1.0, unemployment_rate=10.6),   # [est]
+            MacroSnapshot(date="2012-Q1", gdp_growth=-0.3, cpi=2.7, fed_funds_rate=1.0,
+                          credit_growth=0.0, unemployment_rate=11.0),   # [est]
+            MacroSnapshot(date="2012-Q2", gdp_growth=-0.9, cpi=2.5, fed_funds_rate=0.75,
+                          credit_growth=-1.0, unemployment_rate=11.4,
+                          total_debt_to_gdp=290),
+        ],
         "expected_quadrant": "growth_down_inflation_up",
         "expected_winners": ["nominal_bond", "gold"],
         "expected_losers": ["equity_cyclical"],
@@ -643,15 +723,23 @@ GLOBAL_SCENARIOS = {
 
     "CN 2008 四万亿刺激": {
         "macro": MacroContext(
-            gdp_growth_actual=9.7,
+            gdp_growth_actual=9.7,     # 官方全年GDP（注水严重，Q4实际已断崖）
             gdp_growth_expected=10.0,
             cpi_actual=5.9,
             cpi_expected=3.0,
-            fed_funds_rate=5.31,      # PBOC 1年期贷款基准利率年初→年末降到5.31%
-            credit_growth=19.0,       # [est] 信贷爆发
-            total_debt_to_gdp=150,    # [est]
-            unemployment_rate=4.2,    # 官方
+            fed_funds_rate=5.31,
+            credit_growth=19.0,
+            total_debt_to_gdp=150,
+            unemployment_rate=4.2,     # 官方（真实失业远高于此）
             snapshot_date="2008-11-09",
+            # 替代指标揭示真实经济状态
+            alt_electricity_growth=-4.0,           # 发电量负增长! 经济急剧收缩
+            alt_freight_growth=-10.0,          # 铁路货运暴跌
+            alt_property_investment_growth=20.0,    # 房地产投资还在增长
+            alt_export_growth=-2.0,                # 出口转负（全球衰退传导）
+            alt_import_growth=-8.0,                # 进口暴跌（内需实际很差）
+            alt_auto_sales_growth=-8.0,            # 汽车销量下跌
+            alt_broad_credit_growth=22.0,          # 社融爆发（四万亿+影子银行）
         ),
         "expected_quadrant": "growth_down_inflation_up",
         "expected_winners": ["commodity", "gold"],
@@ -665,16 +753,35 @@ GLOBAL_SCENARIOS = {
 
     "CN 2015 股灾+汇改": {
         "macro": MacroContext(
-            gdp_growth_actual=6.9,
+            gdp_growth_actual=6.9,     # 官方（可能高估1-2pp）
             gdp_growth_expected=7.0,
             cpi_actual=1.4,
             cpi_expected=3.0,
-            fed_funds_rate=4.35,      # PBOC 1年期贷款基准利率
-            credit_growth=15.0,       # [est] 影子银行膨胀
-            total_debt_to_gdp=250,    # [est]
-            unemployment_rate=4.1,    # 官方
+            fed_funds_rate=4.35,
+            credit_growth=15.0,        # 银行信贷（不含影子银行）
+            total_debt_to_gdp=250,
+            unemployment_rate=4.1,     # 官方（不含农民工）
             snapshot_date="2015-08-11",
+            # 替代指标
+            alt_electricity_growth=0.5,             # 发电量几乎零增长! GDP 6.9%?
+            alt_freight_growth=-12.0,           # 铁路货运暴跌（工业严重萎缩）
+            alt_property_investment_growth=1.0,      # 房地产投资急剧减速
+            alt_land_revenue_growth=-22.0,      # 土地出让金暴跌
+            alt_export_growth=-2.8,                  # 出口负增长
+            alt_import_growth=-14.3,                 # 进口暴跌（真实内需极差）
+            alt_auto_sales_growth=4.0,              # 汽车还行
+            alt_broad_credit_growth=12.0,           # 社融增速放缓
         ),
+        "trajectory": [
+            # 信贷极高但在减速: credit_growth 18→16→15, GDP 7.3→7.0→6.9
+            MacroSnapshot(date="2014-Q4", gdp_growth=7.3, cpi=1.5, fed_funds_rate=5.6,
+                          credit_growth=18.0, unemployment_rate=4.1),   # [est]
+            MacroSnapshot(date="2015-Q1", gdp_growth=7.0, cpi=1.2, fed_funds_rate=5.35,
+                          credit_growth=16.0, unemployment_rate=4.1),   # [est]
+            MacroSnapshot(date="2015-Q2", gdp_growth=6.9, cpi=1.4, fed_funds_rate=4.35,
+                          credit_growth=15.0, unemployment_rate=4.1,
+                          total_debt_to_gdp=250),
+        ],
         "expected_quadrant": "growth_down_inflation_down",
         "expected_winners": ["nominal_bond", "cash"],
         "expected_losers": ["equity_cyclical"],
@@ -689,13 +796,21 @@ GLOBAL_SCENARIOS = {
         "macro": MacroContext(
             gdp_growth_actual=2.2,
             gdp_growth_expected=6.0,
-            cpi_actual=2.5,           # 全年平均（猪周期推高食品）
+            cpi_actual=2.5,
             cpi_expected=3.0,
-            fed_funds_rate=3.85,      # PBOC LPR 1年
-            credit_growth=13.0,       # [est] 社融大幅扩张
-            total_debt_to_gdp=280,    # [est]
-            unemployment_rate=5.2,    # 调查失业率
+            fed_funds_rate=3.85,
+            credit_growth=13.0,
+            total_debt_to_gdp=280,
+            unemployment_rate=5.2,
             snapshot_date="2020-03-01",
+            # 替代指标（COVID 冲击后 V 型反弹）
+            alt_electricity_growth=3.1,
+            alt_freight_growth=4.1,
+            alt_export_growth=3.6,                   # 出口替代效应
+            alt_import_growth=-0.7,
+            alt_auto_sales_growth=-1.9,              # 全年微降
+            alt_property_investment_growth=7.0,       # 房地产投资仍增长
+            alt_broad_credit_growth=13.3,
         ),
         "expected_quadrant": "growth_down_inflation_down",
         "expected_winners": ["nominal_bond", "equity_cyclical"],
@@ -709,16 +824,36 @@ GLOBAL_SCENARIOS = {
 
     "CN 2022 房地产危机+动态清零": {
         "macro": MacroContext(
-            gdp_growth_actual=3.0,
+            gdp_growth_actual=3.0,     # 官方（被动态清零和房地产崩盘严重拖累）
             gdp_growth_expected=5.5,
             cpi_actual=2.0,
             cpi_expected=3.0,
-            fed_funds_rate=3.65,      # PBOC LPR 1年
-            credit_growth=10.0,       # [est] 但房贷断崖下跌
-            total_debt_to_gdp=300,    # [est] 私人部门超250%
-            unemployment_rate=5.5,    # 调查（青年失业率超20%未公布）
+            fed_funds_rate=3.65,
+            credit_growth=10.0,
+            total_debt_to_gdp=300,
+            unemployment_rate=5.5,     # 官方（青年失业率 20%+ 未公布）
             snapshot_date="2022-10-01",
+            # 替代指标（揭示真实经济极度疲弱）
+            alt_electricity_growth=3.6,              # 看着还行但工业用电负增长
+            alt_freight_growth=-4.0,            # 铁路货运下跌
+            alt_property_investment_growth=-10.0,    # 房地产投资暴跌
+            alt_land_revenue_growth=-23.0,      # 土地出让金崩塌
+            alt_property_sales_growth=-24.3,       # 商品房销售面积暴跌
+            alt_export_growth=7.0,                   # 出口还行
+            alt_import_growth=1.0,                   # 进口几乎零增长（内需极差）
+            alt_auto_sales_growth=2.0,               # 新能源车拉动，但燃油车暴跌
+            alt_broad_credit_growth=9.6,                      # 社融增速下降
         ),
+        "trajectory": [
+            # GDP 断崖下跌: 8.1→4.8→3.0, credit_growth 也在减速
+            MacroSnapshot(date="2021-Q4", gdp_growth=8.1, cpi=1.5, fed_funds_rate=3.8,
+                          credit_growth=13.0, unemployment_rate=5.1),   # [est]
+            MacroSnapshot(date="2022-Q1", gdp_growth=4.8, cpi=1.1, fed_funds_rate=3.7,
+                          credit_growth=11.0, unemployment_rate=5.5),   # [est]
+            MacroSnapshot(date="2022-Q3", gdp_growth=3.0, cpi=2.0, fed_funds_rate=3.65,
+                          credit_growth=10.0, unemployment_rate=5.5,
+                          total_debt_to_gdp=300),
+        ],
         "expected_quadrant": "growth_down_inflation_down",
         "expected_winners": ["cash", "nominal_bond"],
         "expected_losers": ["equity_cyclical", "commodity"],
@@ -772,6 +907,15 @@ def main():
         expected_l = scenario["expected_losers"]
         expected_q = scenario["expected_quadrant"]
         fact = scenario["fact"]
+
+        # 如果有轨迹数据，用 from_series 代替静态快照
+        if "trajectory" in scenario:
+            macro = MacroContext.from_series(
+                scenario["trajectory"],
+                expected_gdp=macro.gdp_growth_expected or 2.0,
+                expected_cpi=macro.cpi_expected or 2.0,
+            )
+            _inject_country_context(macro, name)  # 重新注入国别
 
         chain = evaluate(macro)
 
