@@ -21,9 +21,9 @@ import polaris.features.l0.cross_period  # noqa: F401
 
 from polaris.features.types import ComputeContext, FeatureLevel, FeatureResult
 from polaris.features.registry import get_features
-from polaris.scoring.scorer import score_company, score_school, format_report
-from polaris.scoring.dimensions import School
-from polaris.scoring.engines.dcf import (
+from polaris.principles.pipeline import run_pipeline, evaluate_school, format_decision
+from polaris.principles.dimensions import School
+from polaris.principles.engines.dcf import (
     compute_intrinsic_value, reverse_dcf, forward_dcf,
 )
 from polaris.causal.graph import CausalGraph, Variable, Link
@@ -395,7 +395,7 @@ def step2_compute_features(ctx: ComputeContext) -> dict[str, float]:
 #  STEP 3: 三流派评分
 # ══════════════════════════════════════════════════════════════
 
-def step3_score_schools(features: dict[str, float]):
+def step3_evaluate_schools(features: dict[str, float]):
     banner("STEP 3: Feature 向量 → 三流派独立评分")
 
     print(f"\n  INPUT: {len(features)} 个特征")
@@ -415,21 +415,21 @@ def step3_score_schools(features: dict[str, float]):
             print(f"    {name}: (无)")
 
     section("OUTPUT: 巴菲特评分")
-    b = score_school(School.BUFFETT, features)
+    b = evaluate_school(School.BUFFETT, features)
     print(f"  得分: {b.score:.1f}/10  信号: {b.signal}  原始分: {b.raw_points:.1f}")
     print(f"  Top 驱动因子:")
     for d in b.drivers:
         print(f"    {d.contribution:+.1f}  {d.rule_name}: {d.description}")
 
     section("OUTPUT: 达利欧评分")
-    d = score_school(School.DALIO, features)
+    d = evaluate_school(School.DALIO, features)
     print(f"  得分: {d.score:.1f}/10  信号: {d.signal}  原始分: {d.raw_points:.1f}")
     print(f"  Top 驱动因子:")
     for dr in d.drivers:
         print(f"    {dr.contribution:+.1f}  {dr.rule_name}: {dr.description}")
 
     section("OUTPUT: 索罗斯评分")
-    s = score_school(School.SOROS, features)
+    s = evaluate_school(School.SOROS, features)
     print(f"  得分: {s.score:.1f}/10  信号: {s.signal}  原始分: {s.raw_points:.1f}")
     print(f"  Top 驱动因子:")
     for dr in s.drivers:
@@ -580,11 +580,11 @@ def step5_causal_graph():
 
 
 # ══════════════════════════════════════════════════════════════
-#  STEP 6: 完整管线（score_company 一键跑通）
+#  STEP 6: 完整管线（run_pipeline 一键跑通）
 # ══════════════════════════════════════════════════════════════
 
 def step6_full_pipeline(features: dict[str, float], mock_market: dict):
-    banner("STEP 6: score_company 完整管线 + 报告")
+    banner("STEP 6: run_pipeline 完整管线 + 报告")
 
     section("INPUT")
     print(f"  company: GoodCorp (GOOD)")
@@ -594,7 +594,7 @@ def step6_full_pipeline(features: dict[str, float], mock_market: dict):
           f"shares={mock_market['shares_outstanding']:,.0f}, "
           f"discount_rate={mock_market['discount_rate']:.1%}")
 
-    result = score_company(
+    result = run_pipeline(
         company_id=1,
         company_name="GoodCorp",
         ticker="GOOD",
@@ -603,7 +603,7 @@ def step6_full_pipeline(features: dict[str, float], mock_market: dict):
         market_context=mock_market,
     )
 
-    section("OUTPUT: CompanyAnalysis 结构")
+    section("OUTPUT: DecisionContext 结构")
     print(f"  buffett:")
     print(f"    score: {result.buffett.school_score.score:.1f}/10")
     print(f"    signal: {result.buffett.school_score.signal}")
@@ -624,7 +624,7 @@ def step6_full_pipeline(features: dict[str, float], mock_market: dict):
         print(f"    expectation_gap: {result.soros.expectation_gap:+.2%}")
 
     section("OUTPUT: 格式化报告")
-    print(format_report(result))
+    print(format_decision(result))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -639,7 +639,7 @@ if __name__ == "__main__":
 
     ctx = step1_build_context()
     features = step2_compute_features(ctx)
-    step3_score_schools(features)
+    step3_evaluate_schools(features)
     mock_market = step4_dcf(features)
     step5_causal_graph()
     step6_full_pipeline(features, mock_market)

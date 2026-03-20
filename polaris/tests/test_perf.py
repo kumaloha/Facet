@@ -23,7 +23,7 @@ from polaris.features.registry import get_features
 import polaris.features.l0.company  # noqa: F401
 import polaris.features.l0.cross_period  # noqa: F401
 
-from polaris.scoring.scorer import score_company
+from polaris.principles.pipeline import run_pipeline
 
 EMPTY = pd.DataFrame()
 PERIODS = [f"FY{y}" for y in range(2016, 2026)]  # 10 期
@@ -275,7 +275,7 @@ def test_throughput(n: int = 500):
         ctx = build_context_fast(seed=i)
         fr = compute_all(ctx)
         features = {name: r.value for name, r in fr.items()}
-        score = score_company(i, f"Co{i}", f"T{i}", "FY2025", features)
+        score = run_pipeline(i, f"Co{i}", f"T{i}", "FY2025", features)
         latencies.append(time.time() - t1)
         feature_counts.append(len(features))
 
@@ -356,7 +356,7 @@ def test_memory():
         ctx = build_context_fast(seed=i + 20000)
         fr = compute_all(ctx)
         features = {n: r.value for n, r in fr.items()}
-        score = score_company(i, f"Co{i}", f"T{i}", "FY2025", features)
+        score = run_pipeline(i, f"Co{i}", f"T{i}", "FY2025", features)
         # 模拟真实场景：不保留引用
         del ctx, fr, features, score
 
@@ -398,7 +398,7 @@ def test_context_creation_overhead():
         compute_times.append(time.perf_counter() - t2)
 
         t3 = time.perf_counter()
-        score = score_company(i, f"Co{i}", f"T{i}", "FY2025", features)
+        score = run_pipeline(i, f"Co{i}", f"T{i}", "FY2025", features)
         score_times.append(time.perf_counter() - t3)
 
     print(f"  数据构造: {statistics.mean(build_times) * 1000:.2f}ms avg")

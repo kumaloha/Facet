@@ -288,7 +288,7 @@ def _link_valuation(ctx: ComputeContext, market: dict | None) -> ChainLink:
         link.detail = "缺折现率或股数"
         return link
 
-    from polaris.scoring.engines.dcf import compute_intrinsic_value
+    from polaris.principles.engines.dcf import compute_intrinsic_value
     dcf = compute_intrinsic_value(features=ctx.features, guidance=guidance,
                                    discount_rate=dr, shares_outstanding=shares)
 

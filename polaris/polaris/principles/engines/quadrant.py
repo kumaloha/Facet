@@ -1,9 +1,12 @@
 """
-达利欧·象限引擎
-================
-用四个宏观变量（增长、通胀、折现率、风险溢价）判定当前象限。
+达利欧·象限引擎（已迁移）
+=========================
+此模块保留用于向后兼容。
 
-全部输入来自外部数据（FRED API 等），非 Anchor。
+新的象限定位逻辑已迁移至 polaris.chains.dalio._step_regime，
+作为达利欧因果链的第 ① 步，输出 CycleRegime（含象限 + 短期/长期周期阶段）。
+
+详见 polaris/docs/dalio_chain_design.md。
 """
 
 from dataclasses import dataclass, field

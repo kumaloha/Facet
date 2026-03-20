@@ -14,7 +14,7 @@ import pytest
 
 from polaris.features.types import ComputeContext, FeatureResult
 from polaris.features.registry import get_features
-from polaris.scoring.scorer import score_company, format_report
+from polaris.principles.pipeline import run_pipeline, format_decision
 
 # 触发 feature/rule 注册
 import polaris.features.l0.company  # noqa: F401
@@ -485,7 +485,7 @@ class TestGoodCorp:
         self.ctx = build_good_corp_context()
         self.feature_results = compute_all_features(self.ctx)
         self.features = {n: r.value for n, r in self.feature_results.items()}
-        self.score = score_company(1, "GoodCorp", "GOOD", "FY2025", self.features)
+        self.score = run_pipeline(1, "GoodCorp", "GOOD", "FY2025", self.features)
 
     def test_feature_count(self):
         """应计算出大量特征（>30）。"""
@@ -544,7 +544,7 @@ class TestGoodCorp:
 
     def test_report_format(self):
         """报告应包含三个流派。"""
-        report = format_report(self.score)
+        report = format_decision(self.score)
         assert "巴菲特" in report
         assert "达利欧" in report
         assert "索罗斯" in report
@@ -559,7 +559,7 @@ class TestBadCorp:
         self.ctx = build_bad_corp_context()
         self.feature_results = compute_all_features(self.ctx)
         self.features = {n: r.value for n, r in self.feature_results.items()}
-        self.score = score_company(2, "BadCorp", "BAD", "FY2025", self.features)
+        self.score = run_pipeline(2, "BadCorp", "BAD", "FY2025", self.features)
 
     def test_feature_count(self):
         assert len(self.features) > 20
@@ -607,12 +607,12 @@ class TestScoreContrast:
         ctx_good = build_good_corp_context()
         fr_good = compute_all_features(ctx_good)
         f_good = {n: r.value for n, r in fr_good.items()}
-        self.good = score_company(1, "GoodCorp", "GOOD", "FY2025", f_good)
+        self.good = run_pipeline(1, "GoodCorp", "GOOD", "FY2025", f_good)
 
         ctx_bad = build_bad_corp_context()
         fr_bad = compute_all_features(ctx_bad)
         f_bad = {n: r.value for n, r in fr_bad.items()}
-        self.bad = score_company(2, "BadCorp", "BAD", "FY2025", f_bad)
+        self.bad = run_pipeline(2, "BadCorp", "BAD", "FY2025", f_bad)
 
     def test_buffett_contrast(self):
         assert self.good.buffett.school_score.score > self.bad.buffett.school_score.score
@@ -637,8 +637,8 @@ if __name__ == "__main__":
     for name, val in sorted(features.items()):
         print(f"    {name}: {val:.4f}")
 
-    result = score_company(1, "GoodCorp", "GOOD", "FY2025", features)
-    print(format_report(result))
+    result = run_pipeline(1, "GoodCorp", "GOOD", "FY2025", features)
+    print(format_decision(result))
 
     print("\n" + "=" * 60)
     print("  BadCorp")
@@ -650,5 +650,5 @@ if __name__ == "__main__":
     for name, val in sorted(features.items()):
         print(f"    {name}: {val:.4f}")
 
-    result = score_company(2, "BadCorp", "BAD", "FY2025", features)
-    print(format_report(result))
+    result = run_pipeline(2, "BadCorp", "BAD", "FY2025", features)
+    print(format_decision(result))

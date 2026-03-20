@@ -320,6 +320,127 @@ def get_latest_macro(indicator: str) -> float | None:
     return float(df.iloc[0]["value"]) if not df.empty else None
 
 
+def get_macro_series(indicator: str, n: int = 6) -> list[tuple[str, float]]:
+    """获取某宏观指标最近 n 条记录（按日期去重）。返回 [(date, value), ...] 按日期升序。"""
+    df = query_df_safe(
+        "SELECT trade_date, value FROM macro_indicators "
+        "WHERE indicator = :ind ORDER BY trade_date DESC LIMIT :n",
+        {"ind": indicator, "n": n},
+    )
+    if df.empty:
+        return []
+    return [(str(row["trade_date"]), float(row["value"])) for _, row in df.iloc[::-1].iterrows()]
+
+
+def build_macro_context() -> "MacroContext":
+    """从 macro_indicators 表构建达利欧链的 MacroContext。
+
+    每个指标取最新一条。缺失字段保持 None。
+    """
+    from polaris.chains.dalio import MacroContext
+    from datetime import date as date_type
+
+    ctx = MacroContext()
+
+    # 直接可用的指标（值即是链需要的格式）
+    direct_mapping = {
+        "fed_funds_rate": "fed_funds_rate",
+        "treasury_10y": "treasury_10y",       # yfinance 的 ^TNX（百分比）
+        "treasury_2y": "treasury_2y",
+        "vix": "vix",
+        "sp500_earnings_yield": "sp500_earnings_yield",
+        "unemployment": "unemployment_rate",
+        "gdp_growth": "gdp_growth_actual",
+        "cpi_yoy": "cpi_actual",
+        "credit_growth": "credit_growth",
+        "total_debt_to_gdp": "total_debt_to_gdp",
+        "fiscal_deficit_to_gdp": "fiscal_deficit_to_gdp",
+    }
+
+    for db_indicator, ctx_field in direct_mapping.items():
+        val = get_latest_macro(db_indicator)
+        if val is not None:
+            # treasury_10y 从 yfinance 来的已经是百分比（如 4.3 表示 4.3%）
+            setattr(ctx, ctx_field, val)
+
+    # sp500_earnings_yield 需要转为百分比
+    if ctx.sp500_earnings_yield is not None:
+        ctx.sp500_earnings_yield = ctx.sp500_earnings_yield * 100
+
+    # 快照日期
+    df = query_df_safe(
+        "SELECT MAX(trade_date) as latest FROM macro_indicators",
+        {},
+    )
+    if not df.empty and df.iloc[0]["latest"]:
+        ctx.snapshot_date = str(df.iloc[0]["latest"])
+    else:
+        ctx.snapshot_date = str(date_type.today())
+
+
+    # ── 轨迹信号（momentum / impulse）──────────────────────────────
+    trajectory_specs: list[tuple[str, str, int, bool]] = [
+        # (db_indicator, ctx_field, n_periods, is_impulse)
+        # is_impulse=True → 二阶导数(需要>=3期), False → 一阶导数(需要>=2期)
+        ("gdp_growth",    "gdp_momentum",           3, False),
+        ("credit_growth", "credit_impulse",         3, True),
+        ("cpi_yoy",       "inflation_momentum",     3, False),
+        ("fed_funds_rate", "rate_direction",         2, False),
+        ("unemployment",  "unemployment_direction",  2, False),
+    ]
+
+    for db_ind, ctx_field, n_periods, is_impulse in trajectory_specs:
+        series = get_macro_series(db_ind, n=n_periods)
+        if is_impulse and len(series) >= 3:
+            # 二阶导数: (v[-1] - v[-2]) - (v[-2] - v[-3])
+            vals = [v for _, v in series]
+            delta_recent = vals[-1] - vals[-2]
+            delta_prior = vals[-2] - vals[-3]
+            setattr(ctx, ctx_field, round(delta_recent - delta_prior, 4))
+        elif not is_impulse and len(series) >= 2:
+            # 一阶导数: v[-1] - v[-2]
+            vals = [v for _, v in series]
+            setattr(ctx, ctx_field, round(vals[-1] - vals[-2], 4))
+        # else: 数据不足，保持 None（向后兼容）
+
+    # ── 债务结构拆解 ─────────────────────────────────────────────
+    debt_mapping = {
+        "household_debt_to_income": "household_debt_to_income",
+        "government_debt_to_gdp": "government_debt_to_gdp",
+        # corporate_debt_to_gdp 需要特殊处理（FRED 是绝对值，需除以 GDP）
+    }
+    for db_ind, ctx_field in debt_mapping.items():
+        val = get_latest_macro(db_ind)
+        if val is not None:
+            setattr(ctx, ctx_field, val)
+
+    # ── 历史百分位（用于自适应归一化）──────────────────────────────
+    # 取最近 20 年的数据计算百分位
+    def _compute_percentiles(indicator: str, n: int = 240) -> tuple[float | None, float | None, float | None]:
+        series = get_macro_series(indicator, n=n)
+        if len(series) < 20:
+            return None, None, None
+        vals = sorted([v for _, v in series])
+        n_vals = len(vals)
+        p25 = vals[int(n_vals * 0.25)]
+        p50 = vals[int(n_vals * 0.50)]
+        p75 = vals[int(n_vals * 0.75)]
+        return p50, p25, p75
+
+    median, p25, p75 = _compute_percentiles("fed_funds_rate")
+    ctx.hist_rate_median = median
+    ctx.hist_rate_p25 = p25
+    ctx.hist_rate_p75 = p75
+
+    median, _, _ = _compute_percentiles("unemployment")
+    ctx.hist_unemployment_median = median
+
+    median, _, _ = _compute_percentiles("gdp_growth")
+    ctx.hist_gdp_median = median
+
+    return ctx
+
+
 def get_guidance_dict(company_id: int) -> dict[str, float | None]:
     """将 management_guidance 表转换为 DCF 引擎需要的 dict 格式。
 

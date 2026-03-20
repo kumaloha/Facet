@@ -7,8 +7,8 @@ V1 规则：索罗斯流派 — 反身性
 反向 DCF 和市场情绪由引擎模块处理（需外部数据）。
 """
 
-from polaris.scoring.dimensions import School
-from polaris.scoring.rules import rule
+from polaris.principles.dimensions import School
+from polaris.principles.rules import rule
 
 
 def _get(features: dict[str, float], key: str) -> float | None:

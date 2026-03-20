@@ -1,19 +1,17 @@
 """
-评分引擎
-========
-特征向量 → 三流派各自评分 → 各流派独立结论。
-不输出综合分，每个流派产出独立的结构化分析。
+分层决策流水线
+==============
+Layer 1: 巴菲特 — 标的筛选（值不值得持有）
+Layer 2: 达利欧 — 环境预测（因果引擎 + 前向投射）
+Layer 3: 索罗斯 — 市场偏差（达利欧预测 vs 市场定价）
 
-三流派：
-- 巴菲特：过滤 → 评分 → 内在价值
-- 达利欧：公司脆弱度 + 宏观象限（需外部数据）
-- 索罗斯：反身性特征 + 反向 DCF（需外部数据）
+输出 DecisionContext 包含三层分层决策，不是三个独立评分。
 """
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from polaris.scoring.dimensions import (
+from polaris.principles.dimensions import (
     SCHOOL_LABELS,
     SCHOOL_QUESTIONS,
     BuffettResult,
@@ -23,26 +21,26 @@ from polaris.scoring.dimensions import (
     SchoolScore,
     SorosResult,
 )
-from polaris.scoring.rules import get_rules
+from polaris.principles.rules import get_rules
 
 # 导入规则模块，触发 @rule 装饰器注册
-import polaris.scoring.v1.buffett  # noqa: F401
-import polaris.scoring.v1.dalio  # noqa: F401
-import polaris.scoring.v1.soros  # noqa: F401
+import polaris.principles.v1.buffett  # noqa: F401
+# dalio v1 规则已删除 — 达利欧链重构为宏观周期定位 + 主动押注，见 docs/dalio_chain_design.md
+import polaris.principles.v1.soros  # noqa: F401
 
 
 # ── 每流派归一化参数 ──────────────────────────────────────────────
 # 基于各流派规则的实际点数范围设定，而非统一硬编码。
 SCHOOL_RANGES: dict[School, tuple[float, float]] = {
     School.BUFFETT: (-20.0, 25.0),
-    School.DALIO: (-12.0, 5.0),
+    # DALIO: 不再用 V1 规则评分，链重构后由 chains/dalio.py 直接输出结构化结果
     School.SOROS: (-12.0, 5.0),
 }
 
 
 @dataclass
-class CompanyAnalysis:
-    """公司三流派分析结果（替代原 CompanyScore）。"""
+class DecisionContext:
+    """三层分层决策上下文。"""
     company_id: int
     company_name: str
     ticker: str
@@ -55,7 +53,7 @@ class CompanyAnalysis:
 
 
 # 向后兼容旧 CLI
-CompanyScore = CompanyAnalysis
+DecisionContext = DecisionContext
 
 
 def _normalize(raw: float, min_raw: float, max_raw: float) -> float:
@@ -100,7 +98,7 @@ SIGNAL_FNS = {
 }
 
 
-def score_school(school: School, features: dict[str, float]) -> SchoolScore:
+def evaluate_school(school: School, features: dict[str, float]) -> SchoolScore:
     """对一个流派评分：执行全部规则 → 求和 → 归一化。"""
     rules = get_rules(school)
     drivers: list[Driver] = []
@@ -236,21 +234,21 @@ def _fetch_market_context(ticker: str, company_id: int) -> dict:
     }
 
 
-def score_company(
+def run_pipeline(
     company_id: int,
     company_name: str,
     ticker: str,
     period: str,
     features: dict[str, float],
     market_context: dict | None = None,
-) -> CompanyAnalysis:
+) -> DecisionContext:
     """对一家公司执行三流派分析。
 
     market_context: 可选，直接注入市场数据（用于测试或无 DB 场景）。
         格式: {"price", "shares_outstanding", "discount_rate", "guidance": {...}}
         不传时从 Anchor DB 获取。
     """
-    result = CompanyAnalysis(
+    result = DecisionContext(
         company_id=company_id,
         company_name=company_name,
         ticker=ticker,
@@ -264,7 +262,7 @@ def score_company(
         mkt = _fetch_market_context(ticker, company_id)
 
     # ── 巴菲特 ──
-    b_score = score_school(School.BUFFETT, features)
+    b_score = evaluate_school(School.BUFFETT, features)
     passed, filter_details = _check_buffett_filters(features)
 
     # 过滤未通过时，信号不能高于"观望"
@@ -286,7 +284,7 @@ def score_company(
 
     # 过滤通过 + 有市场数据 → 计算内在价值
     if passed and mkt["discount_rate"] is not None and mkt["shares_outstanding"] is not None:
-        from polaris.scoring.engines.dcf import compute_intrinsic_value
+        from polaris.principles.engines.dcf import compute_intrinsic_value
 
         dcf = compute_intrinsic_value(
             features=features,
@@ -302,16 +300,26 @@ def score_company(
     result.buffett = buffett_result
 
     # ── 达利欧 ──
-    d_score = score_school(School.DALIO, features)
-    result.dalio = DalioResult(
-        school_score=d_score,
-        # 象限和风险平价需要外部宏观数据（FRED + ETF 日线），暂不可用
-        vulnerability_score=d_score.score,
-        vulnerability_drivers=d_score.drivers,
-    )
+    # 达利欧链: 宏观周期定位 → 类型选择 → 主动押注 → 对冲规格
+    # 输入是宏观数据，不是公司数据 — 同一时间点对所有公司输出相同
+    try:
+        from polaris.db.anchor import build_macro_context
+        from polaris.chains.dalio import evaluate as dalio_evaluate, to_dalio_result
+        macro_ctx = build_macro_context()
+        dalio_chain = dalio_evaluate(macro_ctx)
+        result.dalio = to_dalio_result(dalio_chain)
+    except Exception as e:
+        result.dalio = DalioResult(
+            school_score=SchoolScore(
+                school=School.DALIO,
+                score=0.0,
+                raw_points=0.0,
+                signal=f"链执行失败: {e}",
+            ),
+        )
 
     # ── 索罗斯 ──
-    s_score = score_school(School.SOROS, features)
+    s_score = evaluate_school(School.SOROS, features)
     phase = _determine_reflexivity_phase(features)
 
     soros_result = SorosResult(
@@ -330,7 +338,7 @@ def score_company(
         and oe is not None
         and oe > 0
     ):
-        from polaris.scoring.engines.dcf import reverse_dcf
+        from polaris.principles.engines.dcf import reverse_dcf
 
         rdcf = reverse_dcf(
             current_price=mkt["price"],
@@ -353,7 +361,7 @@ def score_company(
 # ── 报告格式化 ───────────────────────────────────────────────────
 
 
-def format_report(analysis: CompanyAnalysis) -> str:
+def format_decision(analysis: DecisionContext) -> str:
     """格式化三流派分析报告（终端输出）。"""
     lines = [""]
     lines.append("=" * 60)
@@ -395,24 +403,36 @@ def format_report(analysis: CompanyAnalysis) -> str:
         dl = analysis.dalio
         ss = dl.school_score
         lines.append("-" * 60)
-        lines.append(f"  {SCHOOL_LABELS[School.DALIO]}  {ss.score:.1f}/10  [{ss.signal}]")
+        lines.append(f"  {SCHOOL_LABELS[School.DALIO]}  [{ss.signal}]")
         lines.append(f'  "{SCHOOL_QUESTIONS[School.DALIO]}"')
 
-        if dl.quadrant:
-            lines.append(f"  象限: {dl.quadrant}")
-            lines.append(f"  估值信号: {dl.valuation_signal}")
+        if dl.regime:
+            r = dl.regime
+            lines.append(f"  象限: {r.quadrant}  (置信度 {r.confidence:.0%})")
+            lines.append(f"  短期周期: {r.short_cycle_phase}")
+            lines.append(f"  长期周期: {r.long_cycle_phase}")
         else:
-            lines.append("  象限: 需要外部宏观数据")
+            lines.append("  周期定位: 待接入宏观数据")
 
-        if dl.risk_parity_weights:
-            lines.append(f"  风险平价权重: {dl.risk_parity_weights}")
-        else:
-            lines.append("  风险平价: 需要外部价格数据")
+        if dl.active_tilts:
+            lines.append("  主动押注:")
+            for t in dl.active_tilts:
+                lines.append(
+                    f"    {t.direction} {t.asset_type}"
+                    f"  (幅度 {t.magnitude:.0%}, 置信度 {t.confidence:.0%})"
+                )
+                lines.append(f"      逻辑: {t.thesis}")
+                lines.append(f"      失效: {t.decay_trigger}")
 
-        if ss.drivers:
-            lines.append("  脆弱度驱动因子:")
-            for d in ss.drivers:
-                lines.append(f"    {d.contribution:+.1f}  {d.rule_name}: {d.description}")
+        if dl.hedge_specs:
+            lines.append("  对冲需求:")
+            for h in dl.hedge_specs:
+                lines.append(f"    保护: {h.protects_against}")
+                lines.append(f"    最大可接受亏损: {h.max_acceptable_loss:.0%}")
+                lines.append(f"    裸露敞口: {h.unhedged_exposure}")
+
+        if dl.risk_parity_baseline:
+            lines.append(f"  风险平价底仓: {dl.risk_parity_baseline}")
         lines.append("")
 
     # ── 索罗斯 ──

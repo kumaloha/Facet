@@ -37,6 +37,9 @@ MACRO_TICKERS = {
     "sp500": "^GSPC",                 # S&P 500 指数
 }
 
+# 风险平价代理 ETF — market-update 时自动拉取行情
+RISK_PARITY_ETFS = ["SPY", "TLT", "IEF", "DBC", "GLD"]
+
 
 # ── 个股数据 ─────────────────────────────────────────────────────────
 
@@ -200,6 +203,118 @@ async def _update_sp500_earnings_yield(
     return 1
 
 
+# ── FRED 宏观指标 ─────────────────────────────────────────────────────
+
+# 达利欧链需要的 FRED 序列
+FRED_SERIES: dict[str, str] = {
+    # 基础宏观
+    "fed_funds_rate": "FEDFUNDS",          # 联邦基金有效利率 (月度, %)
+    "treasury_2y": "DGS2",                 # 2 年期国债收益率 (日度, %)
+    "cpi_yoy": "CPIAUCSL",                # CPI 全项 (月度, 指数 → 需算 YoY)
+    "gdp_growth": "A191RL1Q225SBEA",      # 实际 GDP 同比增速 (季度, %)
+    "unemployment": "UNRATE",              # 失业率 (月度, %)
+    "credit_growth": "TOTBKCR",            # 银行信贷总量 (周度, 十亿$ → 需算 YoY)
+    "total_debt_to_gdp": "GFDEGDQ188S",   # 联邦债务/GDP (季度, %)
+    "fiscal_deficit_to_gdp": "FYFSGDA188S",  # 联邦盈余或赤字/GDP (年度, %)
+    # 债务结构拆解
+    "household_debt_to_income": "TDSP",    # 家庭债务偿付比/可支配收入 (季度, %)
+    "corporate_debt_to_gdp": "BCNSDODNS",  # 非金融企业债务 (季度, 十亿$ → 需除以 GDP)
+    "government_debt_to_gdp": "GFDEGDQ188S",  # 同 total（联邦债务/GDP）
+    # 市场隐含预期（索罗斯链需要）
+    "breakeven_inflation_5y": "T5YIE",     # 5 年期 breakeven 通胀率 (日度, %)
+    "breakeven_inflation_10y": "T10YIE",   # 10 年期 breakeven 通胀率 (日度, %)
+    "credit_spread_ig": "BAMLC0A0CM",      # 投资级信用利差 (日度, %)
+    "credit_spread_hy": "BAMLH0A0HYM2",   # 高收益信用利差 (日度, %)
+}
+
+
+async def update_fred_indicators(
+    session: AsyncSession,
+    days: int = 90,
+) -> int:
+    """从 FRED 拉取达利欧链需要的宏观指标，写入 macro_indicators。
+
+    对于 CPI 和信贷总量等原始指标，自动计算同比增速。
+    """
+    import asyncio
+    from anchor.config import settings
+
+    api_key = settings.fred_api_key
+    if not api_key:
+        logger.warning("FRED API key not configured (settings.fred_api_key), skipping FRED update")
+        return 0
+
+    def _fetch_all():
+        from fredapi import Fred
+        fred = Fred(api_key=api_key)
+        results = {}
+        for indicator, series_id in FRED_SERIES.items():
+            try:
+                s = fred.get_series(series_id, observation_start=(date.today() - timedelta(days=days + 400)).isoformat())
+                if not s.empty:
+                    results[indicator] = s
+            except Exception as e:
+                logger.warning(f"[FRED] Failed to fetch {series_id}: {e}")
+        return results
+
+    try:
+        raw = await asyncio.to_thread(_fetch_all)
+    except Exception as e:
+        logger.warning(f"[FRED] Batch fetch failed: {e}")
+        return 0
+
+    now = _utcnow()
+    total = 0
+
+    for indicator, series in raw.items():
+        if series.empty:
+            continue
+
+        # CPI: 原始是指数，需要算同比增速
+        if indicator == "cpi_yoy":
+            series = series.pct_change(periods=12) * 100  # 12 个月前的同比 (%)
+            series = series.dropna()
+
+        # 银行信贷: 原始是总量，需要算同比增速
+        if indicator == "credit_growth":
+            series = series.pct_change(periods=52) * 100  # 52 周前的同比 (%)
+            series = series.dropna()
+
+        # 财政赤字: 原始是负数表示赤字，取绝对值
+        if indicator == "fiscal_deficit_to_gdp":
+            series = series.abs()
+
+        # 只取最近 days 天
+        cutoff = date.today() - timedelta(days=days)
+        series = series[series.index >= str(cutoff)]
+
+        existing = await _get_existing_macro_dates(session, indicator)
+
+        count = 0
+        for idx, val in series.items():
+            d = idx.date() if hasattr(idx, "date") else idx
+            if d in existing:
+                continue
+            if val != val:  # NaN check
+                continue
+
+            session.add(MacroIndicator(
+                trade_date=d,
+                indicator=indicator,
+                value=float(val),
+                source="fred",
+                created_at=now,
+            ))
+            count += 1
+
+        if count > 0:
+            await session.flush()
+            total += count
+            logger.info(f"FRED: {indicator} +{count} rows (latest: {float(series.iloc[-1]):.2f})")
+
+    return total
+
+
 # ── 统一入口 ─────────────────────────────────────────────────────────
 
 
@@ -220,16 +335,23 @@ async def market_update(
         # 宏观指标（独立事务，失败不影响个股）
         try:
             result["macro"] = await update_macro_indicators(session, days=days)
+            # FRED 宏观序列（达利欧链需要）
+            result["macro"] += await update_fred_indicators(session, days=days)
             await session.commit()
         except Exception as e:
             await session.rollback()
             logger.warning(f"Macro update failed: {e}")
 
         if not macro_only:
+            # 风险平价代理 ETF（达利欧链波动率计算需要）
+            for etf in RISK_PARITY_ETFS:
+                n = await update_stock_quotes(session, etf, days=days)
+                result["stocks"] += n
+
             if ticker:
                 # 单只
                 company_id = await _resolve_company_id(session, ticker)
-                result["stocks"] = await update_stock_quotes(
+                result["stocks"] += await update_stock_quotes(
                     session, ticker, days=days, company_id=company_id
                 )
             else:

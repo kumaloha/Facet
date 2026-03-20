@@ -162,27 +162,49 @@ async def _write_simple_rows(
                 else:
                     kwargs[dst_key] = val
 
-        # 补充必填字段的默认值
-        if hasattr(model_cls, "source_period") and "source_period" not in kwargs:
-            kwargs["source_period"] = period
-        if hasattr(model_cls, "market_segment") and "market_segment" not in kwargs:
-            kwargs["market_segment"] = row.get("market_segment", "")
-        if hasattr(model_cls, "case_name") and "case_name" not in kwargs:
-            kwargs["case_name"] = row.get("case_name", row.get("description", "")[:200])
-        if hasattr(model_cls, "topic") and "topic" not in kwargs:
-            kwargs["topic"] = row.get("topic", "")
-        if hasattr(model_cls, "metric") and "metric" not in kwargs:
-            kwargs["metric"] = row.get("metric", "other")
-        if hasattr(model_cls, "narrative") and "narrative" not in kwargs:
-            kwargs["narrative"] = row.get("narrative", "")
+        # 补充必填字段的默认值 — 覆盖所有 NOT NULL str 字段
+        _NOT_NULL_DEFAULTS = {
+            "source_period": period,
+            "market_segment": row.get("market_segment", ""),
+            "case_name": row.get("case_name", row.get("description", "")[:200] if row.get("description") else ""),
+            "topic": row.get("topic", ""),
+            "metric": row.get("metric", "other"),
+            "narrative": row.get("narrative", ""),
+            "competitor_name": row.get("competitor_name", ""),
+            "event_type": row.get("event_type", "other"),
+            "event_description": row.get("event_description", ""),
+            "related_party": row.get("related_party", ""),
+            "relationship": row.get("relationship", "other"),
+            "transaction_type": row.get("transaction_type", "other"),
+            "issue_description": row.get("issue_description", ""),
+            "product_or_segment": row.get("product_or_segment", ""),
+        }
+        for field, default in _NOT_NULL_DEFAULTS.items():
+            if hasattr(model_cls, field) and field not in kwargs:
+                kwargs[field] = default
+
         if hasattr(model_cls, "name") and "name" not in kwargs and model_cls not in (CompanyProfile, ExecutiveChange):
             kwargs["name"] = row.get("name", row.get("person_name", ""))
         if hasattr(model_cls, "person_name") and "person_name" not in kwargs:
             kwargs["person_name"] = row.get("person_name", row.get("name", ""))
 
+        # 跳过关键字段为空的行（LLM 输出缺失）
+        skip = False
+        for field in ("competitor_name", "related_party", "person_name"):
+            if hasattr(model_cls, field) and not kwargs.get(field):
+                logger.warning(
+                    f"[Writer] 跳过 {model_cls.__tablename__} 行: {field} 为空"
+                )
+                skip = True
+                break
+        if skip:
+            continue
+
         try:
             obj = model_cls(**kwargs)
-            session.add(obj)
+            async with session.begin_nested():
+                session.add(obj)
+                await session.flush()
             count += 1
         except Exception as e:
             logger.warning(f"[Writer] 写入 {model_cls.__tablename__} 失败: {e}")

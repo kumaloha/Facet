@@ -14,7 +14,7 @@ import click
 from polaris.db import anchor
 from polaris.db.session import create_tables, get_connection
 from polaris.features.pipeline import compute_features
-from polaris.scoring.scorer import CompanyAnalysis, format_report, score_company
+from polaris.principles.pipeline import DecisionContext, format_decision, run_pipeline
 
 
 @click.group()
@@ -55,7 +55,7 @@ def score(ticker: str, period: str | None):
     click.echo(f"  Computed {len(features)} features")
 
     # 4. 评分
-    result = score_company(
+    result = run_pipeline(
         company_id=company_id,
         company_name=company_name,
         ticker=ticker,
@@ -64,7 +64,7 @@ def score(ticker: str, period: str | None):
     )
 
     # 5. 输出报告
-    click.echo(format_report(result))
+    click.echo(format_decision(result))
 
     # 6. 输出特征明细
     if feature_results:
@@ -82,7 +82,7 @@ def score(ticker: str, period: str | None):
     click.echo("  Results saved to Polaris DB.")
 
 
-def _save_results(result: CompanyAnalysis, features: dict[str, float]):
+def _save_results(result: DecisionContext, features: dict[str, float]):
     """将结果写入 Polaris DB。"""
     from sqlalchemy import text as sa_text
 

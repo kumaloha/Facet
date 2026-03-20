@@ -560,7 +560,7 @@ def _link_valuation(ctx: ComputeContext, market: dict | None) -> ChainLink:
         link.reasoning = "市场数据不完整"
         return link
 
-    from polaris.scoring.engines.dcf import compute_intrinsic_value
+    from polaris.principles.engines.dcf import compute_intrinsic_value
     dcf = compute_intrinsic_value(
         features=ctx.features, guidance=guidance,
         discount_rate=dr, shares_outstanding=shares,
@@ -662,7 +662,7 @@ def evaluate_buffett_chain(
                 for f in p.findings:
                     if f.source == "dcf_engine" and f.supports is True:
                         # 从 description 提取不好，存到 result 上
-                        from polaris.scoring.engines.dcf import compute_intrinsic_value
+                        from polaris.principles.engines.dcf import compute_intrinsic_value
                         dcf = compute_intrinsic_value(
                             features=ctx.features,
                             guidance=market_context.get("guidance", {}),

@@ -8,8 +8,8 @@ V1 规则：巴菲特流派 — 内在价值
 5. 资本配置  6. 管理层  7. 可预测性  8. 财务安全
 """
 
-from polaris.scoring.dimensions import School
-from polaris.scoring.rules import rule
+from polaris.principles.dimensions import School
+from polaris.principles.rules import rule
 
 
 def _get(features: dict[str, float], key: str) -> float | None:

@@ -17,20 +17,20 @@ import pandas as pd
 
 import polaris.features.l0.company  # noqa: F401
 import polaris.features.l0.cross_period  # noqa: F401
-import polaris.scoring.v1.buffett  # noqa: F401
+import polaris.principles.v1.buffett  # noqa: F401
 
 from polaris.features.types import ComputeContext, FeatureLevel, FeatureResult
 from polaris.features.registry import get_features
-from polaris.scoring.rules import get_rules
-from polaris.scoring.dimensions import School
-from polaris.scoring.scorer import (
+from polaris.principles.rules import get_rules
+from polaris.principles.dimensions import School
+from polaris.principles.pipeline import (
     BUFFETT_FILTER_THRESHOLDS,
     SCHOOL_RANGES,
     _normalize,
     _check_buffett_filters,
     _score_to_signal_buffett,
 )
-from polaris.scoring.engines.dcf import compute_intrinsic_value, reverse_dcf
+from polaris.principles.engines.dcf import compute_intrinsic_value, reverse_dcf
 
 
 def banner(title: str):
@@ -535,7 +535,7 @@ def step5_dcf(features: dict[str, float], filters_passed: bool):
 def step6_assemble(features, filters_passed, raw_total, score):
     banner("STEP 6: BuffettResult 最终组装")
 
-    from polaris.scoring.scorer import score_company
+    from polaris.principles.pipeline import run_pipeline
 
     mock_market = {
         "price": 135.0,
@@ -544,7 +544,7 @@ def step6_assemble(features, filters_passed, raw_total, score):
         "guidance": {"revenue_growth": 0.15},
     }
 
-    result = score_company(
+    result = run_pipeline(
         company_id=1,
         company_name="GoodCorp",
         ticker="GOOD",

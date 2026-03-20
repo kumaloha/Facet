@@ -5,7 +5,7 @@ DCF 估值 · 输入输出展示
 展示每一步的输入、路径选择、输出。
 """
 
-from polaris.scoring.engines.dcf import (
+from polaris.principles.engines.dcf import (
     compute_intrinsic_value, reverse_dcf, forward_dcf, DCFResult, ReverseDCFResult,
 )
 

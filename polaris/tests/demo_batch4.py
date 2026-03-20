@@ -13,7 +13,7 @@ from polaris.chains.predictability import assess_predictability
 from polaris.chains.integrity import assess_integrity
 from polaris.chains.character import assess_character
 from polaris.chains.risk import assess_risk
-from polaris.scoring.engines.dcf import compute_intrinsic_value, reverse_dcf
+from polaris.principles.engines.dcf import compute_intrinsic_value, reverse_dcf
 
 EMPTY = pd.DataFrame()
 def _fli(items, period="FY2025"):

@@ -19,7 +19,7 @@ from polaris.chains.predictability import assess_predictability, format_predicta
 from polaris.chains.integrity import assess_integrity, format_integrity
 from polaris.chains.character import assess_character, format_character
 from polaris.chains.risk import assess_risk, format_risk
-from polaris.scoring.engines.dcf import compute_intrinsic_value, reverse_dcf
+from polaris.principles.engines.dcf import compute_intrinsic_value, reverse_dcf
 
 # ── 加载所有公司数据 ──
 from demo_batch_buffett import COMPANIES as C1, build_ctx as b1

@@ -22,7 +22,7 @@ import pandas as pd
 
 from polaris.features.types import ComputeContext, FeatureResult, FeatureLevel
 from polaris.features.registry import get_features
-from polaris.scoring.scorer import score_company, format_report
+from polaris.principles.pipeline import run_pipeline, format_decision
 
 import polaris.features.l0.company  # noqa: F401
 import polaris.features.l0.cross_period  # noqa: F401
@@ -569,7 +569,7 @@ def main():
         total_features += len(features)
 
         try:
-            score = score_company(i + 1, profile.name, profile.ticker, "FY2025", features)
+            score = run_pipeline(i + 1, profile.name, profile.ticker, "FY2025", features)
         except Exception as e:
             errors.append((profile.ticker, str(e)))
             continue
@@ -652,8 +652,8 @@ def main():
         ctx = build_context(profile, cid=idx + 1)
         fr = compute_all_features(ctx)
         features = {n: r.value for n, r in fr.items()}
-        score = score_company(idx + 1, profile.name, profile.ticker, "FY2025", features)
-        print(format_report(score))
+        score = run_pipeline(idx + 1, profile.name, profile.ticker, "FY2025", features)
+        print(format_decision(score))
 
     # ── 断言检查 ──
     print()

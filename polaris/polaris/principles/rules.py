@@ -10,7 +10,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from polaris.scoring.dimensions import School
+from polaris.principles.dimensions import School
 
 
 # 全局注册表

@@ -11,7 +11,7 @@ import polaris.features.l0.cross_period  # noqa: F401
 
 from polaris.features.types import ComputeContext, FeatureLevel, FeatureResult
 from polaris.features.registry import get_features
-from polaris.scoring.v1.buffett_chain import evaluate_buffett_chain, format_buffett_chain
+from polaris.principles.v1.buffett_chain import evaluate_buffett_chain, format_buffett_chain
 
 
 def _fli(items, period="FY2025"):
