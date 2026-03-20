@@ -2086,33 +2086,43 @@ def _fetch_volatilities(lookback_days: int = 252) -> dict[str, float] | None:
 
 
 def _step_risk_parity() -> tuple[ChainStep, dict[str, float]]:
-    """④ 风险平价基线 — 不依赖任何判断的被动底仓。
+    """④ 全天候底仓 — 等风险贡献优化。
 
-    优先使用实际波动率计算等风险贡献权重。
-    数据不足时降级为 All Weather 近似权重。
+    使用独立的 all_weather 模块:
+    1. 有 ETF 数据 → ERC 优化（波动率 + 相关性矩阵）
+    2. 无数据 → Bridgewater 公开近似权重
     """
+    from polaris.chains.all_weather import build_all_weather
+
     step = ChainStep(
-        name="风险平价基线",
-        principle="全天候底仓 — 不依赖判断，任何环境存活",
+        name="全天候底仓",
+        principle="等风险贡献 — 每个资产贡献相等的组合风险，任何环境存活",
     )
 
-    vols = _fetch_volatilities()
+    aw = build_all_weather()
 
-    if vols is not None:
-        weights = _compute_equal_risk_weights(vols)
-        step.verdict = Verdict.HOLDS
-        step.detail = "等风险贡献权重（基于 252 日波动率）"
-        for asset, w in weights.items():
-            vol = vols.get(asset, 0)
-            step.evidence.append(f"{asset}: {w:.1%} (vol {vol:.1%})")
-    else:
-        weights = DEFAULT_RISK_PARITY.copy()
-        step.verdict = Verdict.HOLDS
-        step.detail = "All Weather 近似权重（ETF 行情数据不足，降级）"
-        for asset, w in weights.items():
-            step.evidence.append(f"{asset}: {w:.1%}")
+    step.verdict = Verdict.HOLDS
+    step.detail = aw.detail
 
-    return step, weights
+    for asset, w in sorted(aw.weights.items(), key=lambda x: -x[1]):
+        rc = aw.risk_contributions.get(asset)
+        vol = aw.risk_metrics.volatilities.get(asset) if aw.risk_metrics else None
+        parts = [f"{asset}: {w:.1%}"]
+        if vol:
+            parts.append(f"vol={vol:.1%}")
+        if rc:
+            parts.append(f"RC={rc:.1%}")
+        step.evidence.append("  ".join(parts))
+
+    if aw.portfolio_volatility > 0:
+        step.evidence.append(f"组合波动率: {aw.portfolio_volatility:.1%}")
+
+    # 四象限覆盖检查
+    for q, assets in aw.quadrant_coverage.items():
+        if not assets:
+            step.evidence.append(f"⚠ {q} 无覆盖!")
+
+    return step, aw.weights
 
 
 # ══════════════════════════════════════════════════════════════
