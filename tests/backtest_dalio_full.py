@@ -77,6 +77,10 @@ def fetch_fred_history():
         # F5
         "rd_spending": "Y694RC1Q027SBEA",
         "nasdaq": "NASDAQCOM",
+        # Soros 信号
+        "credit_spread_hy": "BAMLH0A0HYM2",
+        "credit_spread_ig": "BAMLC0A0CM",
+        "vix_daily": "VIXCLS",
     }
 
     result = {}
@@ -368,6 +372,154 @@ def apply_pure_alpha(base_weights: dict, view, graph_nodes, macro_data: dict) ->
     return tilts
 
 
+# ── 索罗斯叠加 ──
+
+from polaris.chains.soros import MarketState, evaluate_soros, SorosAction
+from polaris.chains.dalio_forces import ForceDirection
+
+SOROS_MAX_TILT = 0.10  # 索罗斯单资产最大调整幅度
+
+
+def _compute_momentum(monthly_returns: dict, fred: dict, end_month: str, months: int = 12) -> dict:
+    """从月度回报算各资产的 N 月动量。"""
+    all_months = sorted(monthly_returns.keys())
+    end_idx = all_months.index(end_month) if end_month in all_months else len(all_months) - 1
+    start_idx = max(0, end_idx - months + 1)
+    window = all_months[start_idx:end_idx + 1]
+
+    momentum = {}
+    for asset in ["equity", "long_term_bond", "gold", "commodity", "em_bond"]:
+        cum = 1.0
+        for m in window:
+            r = monthly_returns.get(m, {}).get(asset, 0)
+            cum *= (1 + r / 100)
+        momentum[asset] = round((cum - 1) * 100, 1)
+    return momentum
+
+
+def _compute_trend_duration(monthly_returns: dict, end_month: str) -> int:
+    """估算股票正动量持续了几个月。"""
+    all_months = sorted(monthly_returns.keys())
+    end_idx = all_months.index(end_month) if end_month in all_months else len(all_months) - 1
+
+    # 从当前往回数，连续正回报的月数（用 6 月滚动平均判断趋势）
+    duration = 0
+    cum_6m = 0
+    for i in range(end_idx, max(0, end_idx - 60), -1):
+        m = all_months[i]
+        r = monthly_returns.get(m, {}).get("equity", 0)
+        cum_6m = r  # 简化: 用单月回报正负判断
+        # 更好的方法: 用 6 月累计
+        start_6m = max(0, i - 5)
+        window_rets = [monthly_returns.get(all_months[j], {}).get("equity", 0) for j in range(start_6m, i + 1)]
+        avg = sum(window_rets) / len(window_rets) if window_rets else 0
+        if avg > 0:
+            duration += 1
+        else:
+            break
+    return duration
+
+
+def build_market_state(
+    monthly_returns: dict, fred: dict, signals: dict, month: str,
+    force_directions: dict | None = None,
+) -> tuple[MarketState, dict | None]:
+    """从历史数据构造索罗斯需要的 MarketState。"""
+    mom_12 = _compute_momentum(monthly_returns, fred, month, 12)
+    mom_3 = _compute_momentum(monthly_returns, fred, month, 3)
+    mom_6 = _compute_momentum(monthly_returns, fred, month, 6)
+    duration = _compute_trend_duration(monthly_returns, month)
+
+    sig = signals.get(month, {})
+    vix = sig.get("vix")
+    yc = sig.get("yield_curve")
+
+    # VIX 变化
+    all_months = sorted(signals.keys())
+    idx = all_months.index(month) if month in all_months else -1
+    vix_change = sig.get("vix_change")
+    vix_6m_ago = None
+    if idx >= 6:
+        vix_6m_ago = signals.get(all_months[idx - 6], {}).get("vix")
+
+    # 信用利差 from FRED cache
+    hy = _latest_value(fred.get("credit_spread_hy", {}), month)
+    # 3 月前利差
+    hy_3m_ago = None
+    if idx >= 3:
+        hy_3m_ago = _latest_value(fred.get("credit_spread_hy", {}), all_months[idx - 3])
+    hy_6m_ago = None
+    if idx >= 6:
+        hy_6m_ago = _latest_value(fred.get("credit_spread_hy", {}), all_months[idx - 6])
+
+    spread_chg_3m = None
+    if hy is not None and hy_3m_ago is not None:
+        spread_chg_3m = hy - hy_3m_ago
+
+    market = MarketState(
+        momentum_equity=mom_12.get("equity"),
+        momentum_long_bond=mom_12.get("long_term_bond"),
+        momentum_gold=mom_12.get("gold"),
+        momentum_commodity=mom_12.get("commodity"),
+        momentum_em_bond=mom_12.get("em_bond"),
+        vix=vix,
+        vix_change_1m=vix_change,
+        vix_6m_ago=vix_6m_ago,
+        credit_spread_hy=hy,
+        credit_spread_change_3m=spread_chg_3m,
+        credit_spread_hy_6m_ago=hy_6m_ago,
+        yield_curve_10y_3m=yc,
+        trend_duration_months=duration,
+        momentum_equity_3m=mom_3.get("equity"),
+        momentum_equity_6m=mom_6.get("equity"),
+        snapshot_date=month,
+    )
+
+    return market, force_directions
+
+
+def apply_soros_overlay(base_weights: dict, market: MarketState,
+                         force_directions: dict | None = None) -> dict:
+    """索罗斯信号叠加到权重上。"""
+    insight = evaluate_soros(market, force_directions=force_directions)
+    ts = insight.trade_signal
+    if not ts:
+        return base_weights
+
+    weights = dict(base_weights)
+
+    # 主仓调整: ride_assets
+    for asset, ride_w in ts.ride_assets.items():
+        if asset in weights:
+            weights[asset] = weights[asset] + ride_w * SOROS_MAX_TILT
+
+    # 对冲调整: hedge_assets
+    for asset, hedge_w in ts.hedge_assets.items():
+        if asset in ("gold", "long_term_bond", "intermediate_bond"):
+            # 避险做多
+            if asset in weights:
+                weights[asset] = weights[asset] + hedge_w * SOROS_MAX_TILT
+        else:
+            # 风险资产做空(减仓)
+            if asset in weights:
+                weights[asset] = max(0, weights[asset] - hedge_w * SOROS_MAX_TILT)
+
+    # 反身性反馈: 脆弱性高时全面降仓(增加现金)
+    if insight.reflexivity_feedback and insight.reflexivity_feedback.fragility > 0.5:
+        frag = insight.reflexivity_feedback.fragility
+        cash_shift = (frag - 0.5) * 0.15  # fragility 0.7 → 降3%
+        total = sum(weights.values())
+        if total > 0:
+            scale = max(0.8, 1 - cash_shift)
+            weights = {k: v * scale for k, v in weights.items()}
+
+    # 归一化
+    total = sum(weights.values())
+    if total > 0:
+        weights = {k: v / total for k, v in weights.items()}
+    return weights
+
+
 def backtest_dalio_full(
     strategy: str = "aw_only",
     leverage: float = 1.0,
@@ -376,9 +528,10 @@ def backtest_dalio_full(
     """达利欧全流程月度回测。
 
     strategy:
-      "aw_only"        — 纯 All Weather (Bridgewater 近似)
-      "aw_cycle"       — All Weather + 大周期倾斜
-      "aw_cycle_alpha" — All Weather + 大周期 + Pure Alpha
+      "aw_only"            — 纯 All Weather (Bridgewater 近似)
+      "aw_cycle"           — All Weather + 大周期倾斜
+      "aw_cycle_alpha"     — All Weather + 大周期 + Pure Alpha
+      "aw_cycle_alpha_soros" — 全部: AW + 大周期 + PA + 索罗斯
     """
     fred = load_fred_history()
     months = sorted(MONTHLY_RETURNS.keys())
@@ -406,8 +559,9 @@ def backtest_dalio_full(
                 weights = dict(base_aw)
             elif strategy == "aw_cycle":
                 weights = apply_big_cycle_tilts(base_aw, all_data)
-            elif strategy == "aw_cycle_alpha":
+            elif strategy in ("aw_cycle_alpha", "aw_cycle_alpha_soros"):
                 weights = apply_big_cycle_tilts(base_aw, all_data)
+                force_dirs = None
                 try:
                     view = build_five_forces_view(
                         macro_data=macro_d, internal_data=internal_d,
@@ -426,8 +580,28 @@ def backtest_dalio_full(
                     )
                     graph = _propagate_causal_graph(macro_ctx)
                     weights = apply_pure_alpha(weights, view, graph.nodes, all_data)
+
+                    # 构造达利欧力量方向 (供索罗斯对比用)
+                    dir_map = {
+                        ForceDirection.STRONGLY_POSITIVE: 1.0,
+                        ForceDirection.POSITIVE: 0.5,
+                        ForceDirection.NEUTRAL: 0.0,
+                        ForceDirection.NEGATIVE: -0.5,
+                        ForceDirection.STRONGLY_NEGATIVE: -1.0,
+                    }
+                    force_dirs = {f.force_id: dir_map[f.effective_direction] for f in view.forces}
                 except Exception:
-                    pass  # 数据不足时退化到大周期倾斜
+                    pass
+
+                # 索罗斯叠加
+                if strategy == "aw_cycle_alpha_soros":
+                    try:
+                        mkt, _ = build_market_state(
+                            MONTHLY_RETURNS, fred, MONTHLY_SIGNALS, month, force_dirs
+                        )
+                        weights = apply_soros_overlay(weights, mkt, force_dirs)
+                    except Exception:
+                        pass
 
             current_weights = {k: v * leverage for k, v in weights.items()}
             weight_history.append((month, dict(current_weights)))
@@ -530,7 +704,8 @@ def main():
     strategies = [
         ("纯 All Weather", "aw_only"),
         ("AW + 大周期倾斜", "aw_cycle"),
-        ("AW + 大周期 + Pure Alpha", "aw_cycle_alpha"),
+        ("AW + 大周期 + PA", "aw_cycle_alpha"),
+        ("AW + 大周期 + PA + 索罗斯", "aw_cycle_alpha_soros"),
     ]
 
     print(f"\n  {'策略':30s} {'年化':>7s} {'波动率':>7s} {'夏普':>6s} {'累计':>8s} {'回撤':>7s} {'最差月':>7s}")
@@ -555,11 +730,14 @@ def main():
     print("=" * 90)
 
     aw = results.get("纯 All Weather 1.0x")
-    cycle = results.get("AW + 大周期倾斜 2.5x")
-    alpha = results.get("AW + 大周期 + Pure Alpha 2.5x")
+    alpha = results.get("AW + 大周期 + PA 2.5x")
+    soros = results.get("AW + 大周期 + PA + 索罗斯 2.5x")
 
-    print(f"  {'年':6s} {'AW 1x':>8s} {'AW+周期2.5x':>12s} {'AW+PA 2.5x':>12s} {'S&P':>8s}")
-    print(f"  {'-' * 55}")
+    if not soros:
+        soros = alpha  # fallback
+
+    print(f"  {'年':6s} {'AW 1x':>8s} {'AW+PA 2.5x':>11s} {'全部 2.5x':>10s} {'S&P':>8s}")
+    print(f"  {'-' * 50}")
 
     months = sorted(MONTHLY_RETURNS.keys())
     for year in range(2007, 2025):
@@ -574,7 +752,7 @@ def main():
                 return (curve[end_idx + 1] / curve[start_idx] - 1) * 100
             return 0
 
-        print(f"  {year} {yr(aw['equity_curve']):+7.1f}% {yr(cycle['equity_curve']):+7.1f}% {yr(alpha['equity_curve']):+9.1f}% {yr(spy['equity_curve']):+7.1f}%")
+        print(f"  {year} {yr(aw['equity_curve']):+7.1f}% {yr(alpha['equity_curve']):+10.1f}% {yr(soros['equity_curve']):+9.1f}% {yr(spy['equity_curve']):+7.1f}%")
 
 
 if __name__ == "__main__":
