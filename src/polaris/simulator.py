@@ -91,6 +91,9 @@ class SimulationResult:
 
     snapshot_date: str
 
+    # 新闻上下文（可选，用于给脆弱点提供具体解释）
+    news_context: list = field(default_factory=list)
+
 
 # ━━ 辅助 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -758,7 +761,57 @@ def _generate_next_step(
 # ━━ 7. 统一入口 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
-def simulate(fred_history: dict, month: str) -> SimulationResult:
+# ━━ 7.5 新闻事件丰富 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+def enrich_with_news(result: SimulationResult, events: list) -> SimulationResult:
+    """用新闻事件给脆弱点添加具体解释。
+
+    匹配逻辑:
+    - 脆弱点的 location 关键词 <-> 事件的 force_id
+    """
+    for vuln in result.vulnerabilities:
+        related = [e for e in events if _event_matches_vulnerability(e, vuln)]
+        if related:
+            best = max(related, key=lambda e: e.confidence)
+            vuln.mechanism = f"{vuln.mechanism}\n     原因: {best.headline}"
+            if best.affected_sectors:
+                vuln.mechanism += f"\n     影响行业: {', '.join(best.affected_sectors)}"
+            if best.transmission:
+                vuln.mechanism += f"\n     传导: {best.transmission}"
+
+    result.news_context = events
+    return result
+
+
+def _event_matches_vulnerability(event, vuln) -> bool:
+    """判断一个新闻事件是否和一个脆弱点相关。"""
+    vuln_loc = vuln.location.lower()
+
+    # 运输/供应链相关脆弱点 <-> F3/F4事件
+    if any(k in vuln_loc for k in ["运输", "货运", "进口", "供应链", "shipping"]):
+        return event.force_id in ("f3", "f4")
+
+    # 利率/信贷相关 <-> F1a事件
+    if any(k in vuln_loc for k in ["利率", "信贷", "贷款", "rate", "credit"]):
+        return event.force_id == "f1a"
+
+    # 债务相关 <-> F1b事件
+    if any(k in vuln_loc for k in ["债务", "国债", "赤字", "debt", "deficit"]):
+        return event.force_id == "f1b"
+
+    # 就业相关 <-> F2事件
+    if any(k in vuln_loc for k in ["失业", "就业", "unemployment", "labor"]):
+        return event.force_id == "f2"
+
+    # 生产率/技术相关 <-> F5事件
+    if any(k in vuln_loc for k in ["生产率", "技术", "productivity", "tech"]):
+        return event.force_id == "f5"
+
+    return False
+
+
+def simulate(fred_history: dict, month: str, news_events: list | None = None) -> SimulationResult:
     """完整预演: 帝国阶段 → 五力(F1拆分) → 货币冲突 → 脆弱点 → 关键问题"""
     empire = detect_empire_stage(fred_history, month)
     forces = assess_forces(fred_history, month, empire)
@@ -767,7 +820,7 @@ def simulate(fred_history: dict, month: str) -> SimulationResult:
     question = generate_key_question(empire, forces)
     next_step = _generate_next_step(empire, forces, vulns)
 
-    return SimulationResult(
+    result = SimulationResult(
         empire_stage=empire,
         forces=forces,
         monetary_conflict=monetary,
@@ -776,6 +829,11 @@ def simulate(fred_history: dict, month: str) -> SimulationResult:
         key_question=question,
         snapshot_date=month,
     )
+
+    if news_events:
+        enrich_with_news(result, news_events)
+
+    return result
 
 
 # ━━ 8. 格式化输出 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -849,6 +907,19 @@ def format_simulation(result: SimulationResult) -> str:
         lines.append("脆弱点: 暂无显著脆弱点")
     lines.append("")
 
+    # 新闻上下文
+    if result.news_context:
+        _FORCE_CN = {
+            "f1a": "短债务", "f1b": "长债务", "f2": "内部",
+            "f3": "外部", "f4": "自然", "f5": "技术",
+        }
+        lines.append("近期相关事件:")
+        for event in result.news_context[:5]:
+            lines.append(f"  [{_FORCE_CN.get(event.force_id, '?')}] {event.headline}")
+            if event.affected_sectors:
+                lines.append(f"    影响: {', '.join(event.affected_sectors)}")
+        lines.append("")
+
     # 关键问题
     lines.append(f"关键问题: {result.key_question}")
     lines.append("")
@@ -889,3 +960,45 @@ if __name__ == "__main__":
         result = simulate(fred_history, month)
         print(format_simulation(result))
         print()
+
+    # ━━ Mock 新闻事件测试 ━━
+    from anchor.collect.news_events import EconomicEvent
+
+    mock_events = [
+        EconomicEvent(
+            headline="Trump宣布对中国商品加征25%关税",
+            source="reuters", date="2026-03-15",
+            force_id="f3", force_impact="negative",
+            affected_sectors=["XLK", "XLI"],
+            affected_entities=["AAPL", "TSMC"],
+            transmission="关税→进口成本↑→电子制造业盈利↓",
+            asset_implications={"equity": "negative", "gold": "positive"},
+            confidence=0.9,
+        ),
+        EconomicEvent(
+            headline="美联储维持利率不变，暗示年内可能降息",
+            source="bloomberg", date="2026-03-19",
+            force_id="f1a", force_impact="positive",
+            affected_sectors=["XLF", "XLRE"],
+            affected_entities=[],
+            transmission="利率维持→房贷压力不加重→地产和银行受益",
+            asset_implications={"equity": "positive", "bond": "positive"},
+            confidence=0.85,
+        ),
+        EconomicEvent(
+            headline="OpenAI发布GPT-5，企业采用率低于预期",
+            source="wsj", date="2026-03-18",
+            force_id="f5", force_impact="negative",
+            affected_sectors=["XLK"],
+            affected_entities=["MSFT", "NVDA"],
+            transmission="AI采用率不及预期→投资回报存疑→科技股承压",
+            asset_implications={"equity": "negative"},
+            confidence=0.7,
+        ),
+    ]
+
+    print(f"\n{'='*70}")
+    print("测试: 2024-06 + Mock新闻事件")
+    print(f"{'='*70}")
+    result = simulate(fred_history, "2024-06", news_events=mock_events)
+    print(format_simulation(result))
