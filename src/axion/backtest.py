@@ -655,8 +655,17 @@ class BacktestEngine:
                                 PTForceDirection.STRONGLY_NEGATIVE: -1.0,
                             }
                             force_dirs = {}
+                            # F1拆分适配: force1a+force1b → force1（取更负面的）
+                            _f1a = pure_results.get("force1a")
+                            _f1b = pure_results.get("force1b")
+                            if _f1a and _f1b:
+                                _s1a = dir_map_pure.get(_f1a[0], 0.0)
+                                _s1b = dir_map_pure.get(_f1b[0], 0.0)
+                                force_dirs[1] = min(_s1a, _s1b)  # 取更负面的
+                            elif "force1" in pure_results:
+                                force_dirs[1] = dir_map_pure.get(pure_results["force1"][0], 0.0)
                             for fkey, (direction, conf, _) in pure_results.items():
-                                fid = {"force1": 1, "force2": 2, "force3": 3, "force4": 4, "force5": 5}.get(fkey)
+                                fid = {"force2": 2, "force3": 3, "force4": 4, "force5": 5}.get(fkey)
                                 if fid:
                                     force_dirs[fid] = dir_map_pure.get(direction, 0.0)
 

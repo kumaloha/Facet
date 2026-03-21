@@ -1,12 +1,13 @@
 """
-预演模块
-========
+预演模块 — 帝国周期 + 三层嵌套框架
+====================================
 
-从当前状态出发：
-1. 识别周期位置（短周期+长周期）— 用百分位+趋势，不用硬编码阈值
-2. 一步推演 — 因果图各节点按当前趋势走一步
-3. 终点列举 — 历史上从当前位置出发的可能终局
-4. 脆弱点 — 什么条件会让路径从好终点跳到坏终点
+达利欧完整框架的三层嵌套:
+  1. 帝国周期（国家兴衰六阶段）→ 约束终点
+  2. 五大力量（F1a短债务/F1b长债务/F2内部/F3外部/F4自然/F5技术）→ 约束路径空间
+  3. 短周期+偏差 → 搜索具体路径（哪个弱点先爆）
+
+所有判断基于: 百分位(在历史中的位置) + 趋势(方向和加速度)
 """
 
 from __future__ import annotations
@@ -17,92 +18,93 @@ from anchor.compute.percentile_trend import (
     IndicatorAssessment,
     TrendTier,
     assess_from_fred_history,
+    compute_percentile,
 )
-from polaris.chains.forces_pure import _build_derived_series
+from polaris.chains.forces_pure import (
+    FORCE1A_INDICATORS,
+    FORCE1B_INDICATORS,
+    FORCE2_INDICATORS,
+    FORCE3_INDICATORS,
+    FORCE4_INDICATORS,
+    FORCE5_INDICATORS,
+    _build_derived_series,
+)
 
 
 # ━━ 数据结构 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
 @dataclass
-class CyclePosition:
-    """周期位置"""
-    short_cycle: str       # early_expansion / mid_expansion / late_expansion / early_contraction / mid_contraction / late_contraction
-    short_confidence: float
-    long_cycle: str        # early_leverage / mid_leverage / late_leverage / deleveraging
-    long_confidence: float
-    evidence: list[str] = field(default_factory=list)
+class EmpireStage:
+    """帝国周期阶段"""
+    stage: int              # 1-6
+    stage_name: str         # "new_order"/"building"/"prosperity"/"overextension"/"conflict"/"restructuring"
+    confidence: float
+    evidence: list[str]
+    destination: str        # 这个阶段的必然终点描述
+    key_variable: str       # 当前阶段的关键变量
 
 
 @dataclass
-class Endpoint:
-    """可能的终点"""
-    name: str
-    description: str
-    historical_probability: float
-    asset_implications: dict[str, str]
-    key_condition: str
+class MonetaryPolicyConflict:
+    """货币政策多重约束冲突"""
+    conflicting_mandates: list[str]     # 哪些责任在互相打架
+    most_likely_sacrifice: str          # 最可能被牺牲的
+    severity: float                     # 冲突严重度 0-1
+
+
+@dataclass
+class ForceStatus:
+    """单个力量的当前状态"""
+    force_id: str           # "f1a"/"f1b"/"f2"/"f3"/"f4"/"f5"
+    force_name: str
+    role_in_empire: str     # 在帝国周期中的角色
+    status: str             # "accelerating_decline"/"declining"/"stable"/"improving"/"key_variable"
+    percentile: float       # 综合百分位
+    evidence: list[str]
 
 
 @dataclass
 class Vulnerability:
     """脆弱点"""
     location: str
-    severity: float        # 0-1
-    mechanism: str
+    severity: float
+    mechanism: str          # 因果传导链
     trigger: str
-
-
-@dataclass
-class NextStep:
-    """一步推演结果"""
-    most_likely: str
-    direction: str         # "improving" / "deteriorating" / "stable"
-    key_changes: list[str]
-    approaching_endpoint: str
+    empire_context: str     # 在帝国周期中为什么这个点重要
 
 
 @dataclass
 class SimulationResult:
     """完整预演结果"""
-    cycle_position: CyclePosition
-    endpoints: list[Endpoint]
-    vulnerabilities: list[Vulnerability]
-    next_step: NextStep
+    # 第一层: 帝国周期
+    empire_stage: EmpireStage
+
+    # 第二层: 五力机制
+    forces: list[ForceStatus]
+    monetary_conflict: MonetaryPolicyConflict | None
+
+    # 第三层: 具体路径
+    vulnerabilities: list[Vulnerability]     # 最多2个
+    next_step: str                           # 下一步最可能发生什么
+    key_question: str                        # 当前最关键的一个问题
+
     snapshot_date: str
 
 
-# ━━ 辅助: 取指标评估 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ━━ 辅助 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-# 周期定位所需指标: (derived_key, display_name, higher_is_worse)
-_CYCLE_INDICATORS = [
-    ("credit_growth",    "信贷增速",    False),
-    ("gdp_growth",       "GDP增速",     False),
-    ("unemployment",     "失业率",      True),
-    ("fed_funds_rate",   "基准利率",    True),
-    ("total_debt_gdp",   "总债务/GDP",  True),
-    ("cpi_yoy",          "CPI同比",     True),
-    ("lending_standards", "贷款标准收紧", True),
-]
 
-# 脆弱点检测所需扩展指标
-# 注意: 不含 financial_leverage（杠杆是放大器不是触发器，每次都亮没有信息量）
-_VULN_INDICATORS = _CYCLE_INDICATORS + [
-    ("credit_spread_hy",     "高收益利差",    True),
-    ("mortgage_delinquency", "房贷逾期率",    True),
-    ("household_debt_gdp",   "家庭债务/GDP",  True),
-    ("credit_card_delinquency", "信用卡逾期率", True),
-    ("consumer_credit_growth",  "消费贷增速",   True),
-    ("mortgage_debt_service",   "房贷偿付比",   True),
-    # 供应链指标
-    ("cass_freight_yoy",     "货运量变化",    False),  # 下降=差
-    ("transport_cpi_yoy",    "运输成本",      True),
-    ("import_price_yoy",     "进口价格",      True),
-]
+# 所有需要评估的指标（合并各力量列表 + 补充）
+_ALL_INDICATORS = (
+    FORCE1A_INDICATORS + FORCE1B_INDICATORS
+    + FORCE2_INDICATORS + FORCE3_INDICATORS
+    + FORCE4_INDICATORS + FORCE5_INDICATORS
+)
 
 
 def _assess_indicators(
-    indicator_list: list[tuple[str, str, bool]],
+    indicator_list: list[tuple[str, str, bool | None]],
     derived: dict,
     month: str,
 ) -> dict[str, IndicatorAssessment]:
@@ -112,230 +114,439 @@ def _assess_indicators(
         series = derived.get(data_key)
         if series is None:
             continue
+        if higher_is_worse is None:
+            series = {m: abs(v) for m, v in series.items()}
+            higher_is_worse = True
         a = assess_from_fred_history(display_name, month, series, higher_is_worse)
         if a.value is not None:
             results[data_key] = a
     return results
 
 
-# ━━ 趋势判断辅助 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-
-def _is_improving(a: IndicatorAssessment) -> bool:
-    """指标在改善？（考虑 higher_is_worse 已在 assess 阶段处理）"""
-    return a.trend in (TrendTier.IMPROVING, TrendTier.ACCELERATING_IMPROVEMENT)
+def _pct(a: IndicatorAssessment | None) -> float:
+    """取百分位，None 时返回 50（中性）。"""
+    if a is None:
+        return 50.0
+    return a.percentile if a.percentile is not None else 50.0
 
 
 def _is_deteriorating(a: IndicatorAssessment) -> bool:
-    """指标在恶化？"""
     return a.trend in (TrendTier.DETERIORATING, TrendTier.ACCELERATING_DETERIORATION)
+
+
+def _is_improving(a: IndicatorAssessment) -> bool:
+    return a.trend in (TrendTier.IMPROVING, TrendTier.ACCELERATING_IMPROVEMENT)
 
 
 def _is_accelerating_bad(a: IndicatorAssessment) -> bool:
     return a.trend == TrendTier.ACCELERATING_DETERIORATION
 
 
-def _pct(a: IndicatorAssessment) -> float:
-    """取百分位，None 时返回 50（中性）。"""
-    return a.percentile if a.percentile is not None else 50.0
+# ━━ 帝国周期阶段定义 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
-# ━━ 1. 周期位置识别 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+_EMPIRE_STAGES = {
+    1: ("new_order", "新秩序", "从废墟中建立新体系，低债务低冲突"),
+    2: ("building", "建设期", "教育/基建/制度投入，生产率上升"),
+    3: ("prosperity", "繁荣期", "收获投入回报，成为世界领袖"),
+    4: ("overextension", "过度扩张", "消费超出生产，债务开始积累"),
+    5: ("conflict", "内外冲突", "贫富分化+外部挑战+债务不可持续"),
+    6: ("restructuring", "重组期", "货币贬值+权力转移+内部重组"),
+}
+
+_EMPIRE_DESTINATIONS = {
+    1: "建立新的货币和制度体系",
+    2: "进入繁荣期，但基础设施投入终将饱和",
+    3: "过度扩张不可避免 — 成功导致自满和挥霍",
+    4: "内外冲突不可避免 — 过度扩张积累的矛盾必须释放",
+    5: "货币贬值+权力转移+内部重组（不可避免，问题是快慢和烈度）",
+    6: "新秩序的诞生 — 从废墟中重建",
+}
+
+_EMPIRE_KEY_VARIABLES = {
+    1: "新制度能否赢得信任",
+    2: "教育和基建投入的质量",
+    3: "能否控制成功带来的自满",
+    4: "F5(技术)能否延缓到达冲突期",
+    5: "F5(AI/技术)能否续命 — 续命几十年 or 加速几年内到达重组",
+    6: "新秩序的设计者是谁",
+}
 
 
-def identify_cycle_position(fred_history: dict, month: str) -> CyclePosition:
+# ━━ 1. 帝国阶段检测 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+def detect_empire_stage(
+    fred_history: dict,
+    month: str,
+) -> EmpireStage:
     """
-    百分位驱动的周期定位。
+    百分位驱动的帝国阶段检测。
 
-    短周期: 信贷+GDP+失业+利率的百分位和趋势 → 6 个阶段
-    长周期: 债务/GDP 百分位 → 4 个阶段
+    用债务、不平等、外部压力、生产率的百分位组合判断：
+    - 债务低+不平等低+生产率高 → 阶段2-3（建设/繁荣）
+    - 债务高+不平等升+外部挑战 → 阶段4-5（过度扩张/冲突）
+    - 债务极高+内部极化+货币政策困境 → 阶段5→6过渡
     """
     derived = _build_derived_series(fred_history)
-    indicators = _assess_indicators(_CYCLE_INDICATORS, derived, month)
+    indicators = _assess_indicators(_ALL_INDICATORS, derived, month)
 
-    credit = indicators.get("credit_growth")
-    gdp = indicators.get("gdp_growth")
-    unemp = indicators.get("unemployment")
-    rate = indicators.get("fed_funds_rate")
-    debt = indicators.get("total_debt_gdp")
-    cpi = indicators.get("cpi_yoy")
-    lending = indicators.get("lending_standards")
+    debt_pct = _pct(indicators.get("total_debt_gdp"))
+    gini_pct = _pct(indicators.get("gini"))
+    unemp_pct = _pct(indicators.get("unemployment"))
+    epu_pct = _pct(indicators.get("epu_index"))
+    prod_pct = _pct(indicators.get("productivity_growth"))
+    rate_pct = _pct(indicators.get("fed_funds_rate"))
+    fiscal_pct = _pct(indicators.get("fiscal_deficit_gdp"))
 
     evidence: list[str] = []
 
-    # ── 短周期判断 ──
-    #
-    # 核心逻辑 (百分位区间: <30=低, 30-50=中低, 50-70=中高, >70=高):
-    # 先判断方向（扩张 vs 收缩），再判断阶段（早/中/晚）
+    # 评分逻辑: 从低阶段到高阶段打分
+    # 高债务 → 高阶段
+    stage_score = 0.0
 
-    # 综合扩张/收缩信号计数
-    expansion_signals = 0
-    contraction_signals = 0
-
-    if credit and _is_improving(credit):
-        expansion_signals += 1
-        evidence.append(f"信贷在改善(P{_pct(credit):.0f})")
-    elif credit and _is_deteriorating(credit):
-        contraction_signals += 1
-        evidence.append(f"信贷在恶化(P{_pct(credit):.0f})")
-
-    if gdp and _is_improving(gdp):
-        expansion_signals += 1
-        evidence.append(f"GDP在改善(P{_pct(gdp):.0f})")
-    elif gdp and _is_deteriorating(gdp):
-        contraction_signals += 1
-        evidence.append(f"GDP在恶化(P{_pct(gdp):.0f})")
-
-    if unemp and _is_improving(unemp):
-        expansion_signals += 1
-        evidence.append(f"失业在改善(P{_pct(unemp):.0f})")
-    elif unemp and _is_deteriorating(unemp):
-        contraction_signals += 1
-        evidence.append(f"失业在恶化(P{_pct(unemp):.0f})")
-
-    if lending and _is_improving(lending):
-        expansion_signals += 1
-        evidence.append(f"贷款标准在放松(P{_pct(lending):.0f})")
-    elif lending and _is_deteriorating(lending):
-        contraction_signals += 1
-        evidence.append(f"贷款标准在收紧(P{_pct(lending):.0f})")
-
-    # 判断大方向
-    is_expansion = expansion_signals > contraction_signals
-
-    # 判断阶段
-    if is_expansion:
-        # 晚期扩张: 失业百分位<30(很低) + 利率百分位>70(很高) → 过热
-        unemp_pct = _pct(unemp) if unemp else 50
-        rate_pct = _pct(rate) if rate else 50
-        cpi_pct = _pct(cpi) if cpi else 50
-
-        if unemp_pct < 30 and rate_pct > 70:
-            short_cycle = "late_expansion"
-            evidence.append("失业极低+利率极高→过热")
-        elif unemp_pct < 30 or cpi_pct > 70:
-            # 经济在走热但还没到顶
-            short_cycle = "mid_expansion"
-            evidence.append("经济走热中")
-        else:
-            short_cycle = "early_expansion"
-            evidence.append("经济开始扩张")
+    if debt_pct > 70:
+        stage_score += 2.0
+        evidence.append(f"债务/GDP P{debt_pct:.0f} — 高位")
+    elif debt_pct > 50:
+        stage_score += 1.0
+        evidence.append(f"债务/GDP P{debt_pct:.0f} — 中高位")
     else:
-        # 收缩阶段
-        rate_improving = rate and _is_improving(rate)
-        credit_improving = credit and _is_improving(credit)
+        evidence.append(f"债务/GDP P{debt_pct:.0f} — 低位")
 
-        if rate_improving or credit_improving:
-            # 利率在下降或信贷开始改善 → 接近见底
-            short_cycle = "late_contraction"
-            if rate_improving:
-                evidence.append("利率在下降→接近见底")
-            if credit_improving:
-                evidence.append("信贷开始改善→接近见底")
-        elif contraction_signals >= 3:
-            short_cycle = "mid_contraction"
-            evidence.append("多数指标同时恶化→收缩中期")
-        else:
-            short_cycle = "early_contraction"
-            evidence.append("收缩信号出现但未全面扩散")
+    # 高不平等 → 高阶段
+    if gini_pct > 70:
+        stage_score += 1.5
+        evidence.append(f"基尼系数 P{gini_pct:.0f} — 极化严重")
+    elif gini_pct > 50:
+        stage_score += 0.5
+        evidence.append(f"基尼系数 P{gini_pct:.0f} — 中等不平等")
 
-    # 短周期置信度: 信号一致性
-    total_signals = expansion_signals + contraction_signals
-    if total_signals > 0:
-        dominant = max(expansion_signals, contraction_signals)
-        short_confidence = round(dominant / max(total_signals, 1), 2)
+    # 外部压力
+    if epu_pct > 70:
+        stage_score += 1.0
+        evidence.append(f"政策不确定性 P{epu_pct:.0f} — 外部压力大")
+    elif epu_pct > 50:
+        stage_score += 0.3
+        evidence.append(f"政策不确定性 P{epu_pct:.0f}")
+
+    # 生产率低 → 高阶段（创新枯竭）
+    if prod_pct < 30:
+        stage_score += 0.5
+        evidence.append(f"生产率 P{prod_pct:.0f} — 低迷")
+    elif prod_pct > 70:
+        stage_score -= 0.5
+        evidence.append(f"生产率 P{prod_pct:.0f} — 活跃")
+
+    # 财政赤字高 → 高阶段
+    if fiscal_pct > 70:
+        stage_score += 0.5
+        evidence.append(f"财政赤字 P{fiscal_pct:.0f} — 高位")
+
+    # 利率趋近于零 = 政策空间耗尽 → 阶段5-6信号
+    if rate_pct < 30 and debt_pct > 70:
+        stage_score += 0.5
+        evidence.append(f"利率 P{rate_pct:.0f} + 高债务 — 政策空间耗尽")
+
+    # 映射到阶段
+    if stage_score < 1.0:
+        stage = 2  # 建设期（阶段1=新秩序太罕见，不做检测）
+        confidence = 0.5
+    elif stage_score < 2.0:
+        stage = 3  # 繁荣期
+        confidence = 0.6
+    elif stage_score < 3.5:
+        stage = 4  # 过度扩张
+        confidence = 0.65
+    elif stage_score < 5.0:
+        stage = 5  # 内外冲突
+        confidence = 0.7
     else:
-        short_confidence = 0.3  # 无信号→低置信度
+        # 阶段5→6过渡：债务极高+内部极化+政策困境
+        stage = 5  # 仍标记为5，但confidence更高表示接近6
+        confidence = 0.8
+        if debt_pct > 80 and gini_pct > 70:
+            evidence.append("阶段5→6过渡信号: 债务极高+内部极化")
 
-    # ── 长周期判断 ──
-    #
-    # 债务/GDP 百分位 → 杠杆阶段
-    debt_pct = _pct(debt) if debt else 50
-    rate_pct_val = _pct(rate) if rate else 50
+    stage_name = _EMPIRE_STAGES[stage][0]
+    destination = _EMPIRE_DESTINATIONS[stage]
+    key_variable = _EMPIRE_KEY_VARIABLES[stage]
 
-    if debt_pct < 40:
-        long_cycle = "early_leverage"
-        long_confidence = 0.7
-        evidence.append(f"债务/GDP百分位低(P{debt_pct:.0f})→早期杠杆")
-    elif debt_pct < 70:
-        long_cycle = "mid_leverage"
-        long_confidence = 0.6
-        evidence.append(f"债务/GDP百分位中(P{debt_pct:.0f})→中期杠杆")
-    elif rate_pct_val < 30:
-        # 高债务 + 低利率 → 去杠杆（央行在刺激）
-        long_cycle = "deleveraging"
-        long_confidence = 0.8
-        evidence.append(f"高债务(P{debt_pct:.0f})+低利率(P{rate_pct_val:.0f})→去杠杆")
-    else:
-        long_cycle = "late_leverage"
-        long_confidence = 0.7
-        evidence.append(f"债务/GDP百分位高(P{debt_pct:.0f})→晚期杠杆")
-
-    return CyclePosition(
-        short_cycle=short_cycle,
-        short_confidence=short_confidence,
-        long_cycle=long_cycle,
-        long_confidence=long_confidence,
+    return EmpireStage(
+        stage=stage,
+        stage_name=stage_name,
+        confidence=round(confidence, 2),
         evidence=evidence,
+        destination=destination,
+        key_variable=key_variable,
     )
 
 
-# ━━ 2. 脆弱点识别 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ━━ 2. 五力状态评估 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
-# 正反馈环定义 (金融原理/经济常识级别)
-# 每个环: (指标A, 指标B, 描述)
-_FEEDBACK_LOOPS = [
-    # 失业↑ → 消费↓ → 企业↓ → 失业更↑
-    ("unemployment", "retail_sales_growth", "失业→消费萎缩→企业裁员→失业"),
-    # 利差↑ → 融资难 → 违约↑ → 利差更↑
-    ("credit_spread_hy", "mortgage_delinquency", "利差→融资成本→违约→利差"),
-    # 资产价↓ → 抵押品↓ → 信贷缩 → 资产更↓
-    ("financial_leverage", "credit_growth", "杠杆→抵押品→信贷收缩→资产下跌"),
-    # 贷款标准收紧 → 信贷收缩 → 经济恶化 → 标准更紧
-    ("lending_standards", "credit_growth", "贷款标准收紧→信贷缩→经济差→更收紧"),
+# 每个力量在帝国周期中的角色
+_FORCE_ROLES = {
+    "f1a": "节拍器 — 每次短周期下行都揭开长周期烂账",
+    "f1b": "终点的数学必然性 — 债务积累不可逆",
+    "f2": "终点的社会表现 — 不平等终将爆发",
+    "f3": "终点的地缘表现 — 挑战者必然出现",
+    "f4": "催化剂 — 随机加速",
+    "f5": "唯一能延缓终点的力量 — 续命还是加速",
+}
+
+_FORCE_NAMES = {
+    "f1a": "短债务周期",
+    "f1b": "长债务周期",
+    "f2": "内部秩序",
+    "f3": "外部秩序",
+    "f4": "自然之力",
+    "f5": "技术",
+}
+
+
+def _avg_percentile(indicators: dict[str, IndicatorAssessment], keys: list[str]) -> float:
+    """计算一组指标的平均百分位。"""
+    vals = [_pct(indicators.get(k)) for k in keys if k in indicators]
+    return sum(vals) / len(vals) if vals else 50.0
+
+
+def _determine_status(
+    avg_pct: float,
+    indicators: dict[str, IndicatorAssessment],
+    keys: list[str],
+) -> str:
+    """根据百分位和趋势判断力量状态。"""
+    # 检查趋势方向
+    deteriorating_count = 0
+    improving_count = 0
+    accel_bad = False
+    for k in keys:
+        a = indicators.get(k)
+        if a is None:
+            continue
+        if _is_deteriorating(a):
+            deteriorating_count += 1
+            if _is_accelerating_bad(a):
+                accel_bad = True
+        elif _is_improving(a):
+            improving_count += 1
+
+    if accel_bad and avg_pct > 50:
+        return "accelerating_decline"
+    elif deteriorating_count > improving_count and avg_pct > 50:
+        return "declining"
+    elif improving_count > deteriorating_count:
+        return "improving"
+    else:
+        return "stable"
+
+
+def assess_forces(
+    fred_history: dict,
+    month: str,
+    empire_stage: EmpireStage,
+) -> list[ForceStatus]:
+    """评估六大力量（F1a/F1b/F2/F3/F4/F5）在帝国周期中的状态。"""
+    derived = _build_derived_series(fred_history)
+    indicators = _assess_indicators(_ALL_INDICATORS, derived, month)
+
+    force_configs: list[tuple[str, list[tuple[str, str, bool | None]]]] = [
+        ("f1a", FORCE1A_INDICATORS),
+        ("f1b", FORCE1B_INDICATORS),
+        ("f2", FORCE2_INDICATORS),
+        ("f3", FORCE3_INDICATORS),
+        ("f4", FORCE4_INDICATORS),
+        ("f5", FORCE5_INDICATORS),
+    ]
+
+    results: list[ForceStatus] = []
+    for force_id, indicator_list in force_configs:
+        keys = [k for k, _, _ in indicator_list]
+        avg_pct = _avg_percentile(indicators, keys)
+        status = _determine_status(avg_pct, indicators, keys)
+
+        # 构建证据
+        evidence: list[str] = []
+        for k in keys:
+            a = indicators.get(k)
+            if a is not None:
+                pct = _pct(a)
+                trend_cn = {
+                    TrendTier.ACCELERATING_DETERIORATION: "加速恶化",
+                    TrendTier.DETERIORATING: "恶化",
+                    TrendTier.STABLE: "稳定",
+                    TrendTier.IMPROVING: "改善",
+                    TrendTier.ACCELERATING_IMPROVEMENT: "加速改善",
+                }.get(a.trend, "未知")
+                evidence.append(f"{a.name} P{pct:.0f} {trend_cn}")
+
+        # 阶段5+F5活跃 → 标记为 key_variable
+        if force_id == "f5" and empire_stage.stage >= 4 and status == "improving":
+            status = "key_variable"
+
+        results.append(ForceStatus(
+            force_id=force_id,
+            force_name=_FORCE_NAMES[force_id],
+            role_in_empire=_FORCE_ROLES[force_id],
+            status=status,
+            percentile=round(avg_pct, 1),
+            evidence=evidence,
+        ))
+
+    return results
+
+
+# ━━ 3. 货币政策约束冲突 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+def detect_monetary_conflict(
+    fred_history: dict,
+    month: str,
+) -> MonetaryPolicyConflict | None:
+    """
+    检测货币政策的多重约束冲突。
+
+    五个责任:
+    1. 就业 → 需要低利率
+    2. CPI控制 → 需要高利率
+    3. 金融稳定 → 需要低利率（兜底泡沫）
+    4. 国债可持续 → 需要低利率（政府还不起高息）
+    5. 全球美元流动性 → 需要低利率
+    """
+    derived = _build_derived_series(fred_history)
+    indicators = _assess_indicators(_ALL_INDICATORS, derived, month)
+
+    cpi_pct = _pct(indicators.get("cpi_yoy"))
+    unemp_pct = _pct(indicators.get("unemployment"))
+    debt_pct = _pct(indicators.get("total_debt_gdp"))
+    rate_pct = _pct(indicators.get("fed_funds_rate"))
+    spread_pct = _pct(indicators.get("credit_spread_hy"))
+
+    conflicts: list[str] = []
+
+    # CPI高 → 需要加息
+    if cpi_pct > 60:
+        if debt_pct > 60:
+            conflicts.append("CPI需要加息 vs 国债还不起高息")
+        if unemp_pct > 50:
+            conflicts.append("CPI需要加息 vs 就业需要降息")
+        if spread_pct > 60:
+            conflicts.append("CPI需要加息 vs 金融稳定需要降息")
+
+    # 利率已高 + 债务高 = 偿债压力
+    if rate_pct > 60 and debt_pct > 60:
+        conflicts.append("利率高位 vs 政府偿债压力")
+
+    # 就业弱 + 通胀高 = 滞胀困境
+    if unemp_pct > 60 and cpi_pct > 60:
+        conflicts.append("滞胀困境: 就业和通胀同时需要相反的利率方向")
+
+    if not conflicts:
+        return None
+
+    # 判断最可能被牺牲的
+    # 历史规律: 央行最终总是选择印钱（牺牲CPI）
+    if debt_pct > 70:
+        sacrifice = "CPI目标（印钱→通胀→货币贬值）"
+    elif unemp_pct > 70:
+        sacrifice = "CPI目标（降息保就业）"
+    elif spread_pct > 70:
+        sacrifice = "CPI目标（降息保金融稳定）"
+    else:
+        sacrifice = "就业（维持紧缩压制通胀）"
+
+    severity = min(len(conflicts) / 4.0, 1.0)
+
+    return MonetaryPolicyConflict(
+        conflicting_mandates=conflicts,
+        most_likely_sacrifice=sacrifice,
+        severity=round(severity, 2),
+    )
+
+
+# ━━ 4. 脆弱点识别 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+# 因果传导链（帝国周期感知版本）
+_CAUSAL_CHAINS = [
+    # 短周期 → 长周期揭盖
+    ("fed_funds_rate", "mortgage_delinquency", "利率→偿债→逾期→信用风险",
+     "F1a下行揭开F1b隐藏坏账"),
+    ("lending_standards", "credit_growth", "银行收紧→信贷收缩",
+     "短周期信贷紧缩的传导"),
+    ("credit_growth", "gdp_growth", "信贷收缩→经济放缓",
+     "信贷是经济的血液"),
+    ("credit_growth", "unemployment", "信贷收缩→企业裁员",
+     "信贷收缩→企业失去融资→裁员"),
+
+    # 利率传导
+    ("fed_funds_rate", "credit_spread_hy", "利率升→融资成本→信用风险",
+     "利率是F1b的引信"),
+
+    # 就业-消费正反馈
+    ("unemployment", "retail_sales_growth", "失业→消费下降",
+     "F2社会压力的核心传导"),
+
+    # 消费信贷恶化
+    ("consumer_credit_growth", "credit_card_delinquency", "过度借贷→还不起",
+     "短期信贷质量恶化"),
+
+    # 供应链传导
+    ("cass_freight_yoy", "gdp_growth", "货运中断→生产停滞→GDP下降",
+     "F4自然冲击的传导"),
+    ("cass_freight_yoy", "unemployment", "供应链断→企业停工→失业",
+     "F4→F2的跨力量传导"),
+    ("import_price_yoy", "cpi_yoy", "进口成本飙升→通胀",
+     "F3外部冲突通过供应链打到F1a"),
+    ("transport_cpi_yoy", "import_price_yoy", "运输成本升→进口成本升",
+     "F4→F3的跨力量传导"),
+
+    # 跨力量传导（帝国周期特有）
+    # F5失败 → 坏账加到F1b
+    ("productivity_growth", "total_debt_gdp", "生产率低迷→债务/GDP恶化",
+     "F5失败→F1b加速"),
 ]
 
-# 背离检测: (指标A, 指标B, 条件描述)
-# A在改善但B在恶化，说明有隐藏风险
-_DIVERGENCES = [
-    # GDP好但信贷在收缩 → 信贷领先GDP
-    ("gdp_growth", "credit_growth", "GDP尚好但信贷已在收缩(信贷领先GDP)"),
-    # 失业低但贷款标准在收紧 → 银行看到了消费者没看到的
-    ("unemployment", "lending_standards", "失业尚低但银行在收紧贷款(银行看到隐藏风险)"),
-]
+# 帝国阶段对弱点的权重加成
+_EMPIRE_VULNERABILITY_WEIGHTS: dict[int, dict[str, float]] = {
+    # 阶段4: 过度扩张 — 信贷质量和利率是命门
+    4: {
+        "fed_funds_rate": 1.8,
+        "mortgage_delinquency": 1.5,
+        "credit_card_delinquency": 1.5,
+        "total_debt_gdp": 1.5,
+        "lending_standards": 1.3,
+    },
+    # 阶段5: 冲突 — F1b指标权重最高（终点的核心机制）
+    5: {
+        "total_debt_gdp": 2.0,           # F1b: 终点的数学必然性
+        "fed_funds_rate": 1.8,           # 利率是F1b的引信
+        "productivity_growth": 1.5,      # F5: 关键变量
+        "gini": 1.5,                     # F2: 社会爆发点
+        "epu_index": 1.3,               # F3: 外部挑战
+        "mortgage_delinquency": 1.5,
+        "credit_spread_hy": 1.5,
+        "household_debt_gdp": 1.5,
+    },
+}
 
 
 def identify_vulnerabilities(
     fred_history: dict,
     month: str,
-    cycle_position: CyclePosition | None = None,
+    empire_stage: EmpireStage,
 ) -> list[Vulnerability]:
     """
-    两层脆弱点识别:
+    两层脆弱点识别（帝国周期感知版本）。
 
-    第一层（事前，常态）: 系统的结构性弱点
-      "如果遭到冲击，系统会在哪里断裂？"
-      = 百分位高位（张力大）+ 在当前周期位置是关键指标 + 下游连接多
-
-      弱点随周期位置变化（大周期先验经验）:
-      - 晚期扩张: 信贷质量+利率（借了太多+加息打到偿债）
-      - 早期收缩: 就业+消费（失业→消费→更多失业的正反馈）
-      - 晚期杠杆: 任何外部冲击都被杠杆放大→看信贷+利差
-      - 去杠杆: 政策反应（印钱vs紧缩）→看利率+货币供应
-
-    第二层（事后，冲击发生时）: 突变打到了哪个弱点
-      "刚才发生了什么？打到了哪？"
-      = 百分位短期跳变 → 匹配到传导链
-
-    最多输出2个。
+    第一层（事前）: 结构性弱点 — 高百分位 + 帝国阶段加权 + 下游连接多
+    第二层（事后）: 突变检测 — 3个月内百分位跳变>30
     """
-    from anchor.compute.percentile_trend import SignalTier, compute_percentile
-
     derived = _build_derived_series(fred_history)
-    indicators = _assess_indicators(_VULN_INDICATORS, derived, month)
+    indicators = _assess_indicators(_ALL_INDICATORS, derived, month)
 
-    # 追加零售销售
+    # 额外补充零售
     for key, name, hiw in [("retail_sales_growth", "零售销售增速", False)]:
         series = derived.get(key)
         if series is not None:
@@ -343,135 +554,63 @@ def identify_vulnerabilities(
             if a.value is not None:
                 indicators[key] = a
 
-    # ── 因果传导链（金融原理/经济常识）──
-    _CAUSAL_CHAIN = [
-        ("lending_standards", "credit_growth", "银行收紧→信贷收缩"),
-        ("credit_growth", "gdp_growth", "信贷收缩→经济放缓"),
-        ("credit_growth", "unemployment", "信贷收缩→企业裁员"),
-        ("fed_funds_rate", "mortgage_delinquency", "利率升→还款压力→逾期"),
-        ("fed_funds_rate", "credit_spread_hy", "利率升→融资成本→信用风险"),
-        ("unemployment", "retail_sales_growth", "失业→消费下降"),
-        ("consumer_credit_growth", "credit_card_delinquency", "过度借贷→还不起"),
-        # 供应链传导
-        ("cass_freight_yoy", "gdp_growth", "货运中断→生产停滞→GDP下降"),
-        ("cass_freight_yoy", "unemployment", "供应链断→企业停工→失业"),
-        ("import_price_yoy", "cpi_yoy", "进口成本飙升→通胀"),
-        ("transport_cpi_yoy", "import_price_yoy", "运输成本升→进口成本升"),
-    ]
-
-    # 计算每个指标的下游连接数（影响面）
-    downstream_count = {}
-    for upstream, downstream, _ in _CAUSAL_CHAIN:
+    # 计算每个指标的下游连接数
+    downstream_count: dict[str, int] = {}
+    for upstream, _, _, _ in _CAUSAL_CHAINS:
         downstream_count[upstream] = downstream_count.get(upstream, 0) + 1
 
-    # ══════════════════════════════════════════
-    # 大周期先验: 不同周期位置，不同指标是关键弱点
-    # 这是达利欧从几百年历史中总结的规律
-    # ══════════════════════════════════════════
-    # 周期位置 → 哪些指标在这个阶段特别危险（权重加成）
-    _CYCLE_VULNERABILITY_WEIGHTS: dict[str, dict[str, float]] = {
-        # 晚期扩张: 借了太多，加息打到偿债 — 信贷质量是命门
-        "late_expansion": {
-            "mortgage_delinquency": 2.0,     # 信贷质量开始恶化
-            "credit_card_delinquency": 2.0,  # 消费端信贷质量
-            "fed_funds_rate": 1.8,           # 加息→偿债
-            "lending_standards": 1.5,        # 银行感知到风险
-            "consumer_credit_growth": 1.5,   # 过度借贷
-        },
-        # 早期收缩: 失业→消费→更多失业的正反馈 — 就业是命门
-        "early_contraction": {
-            "unemployment": 2.0,             # 失业正反馈的核心
-            "retail_sales_growth": 1.8,      # 消费崩塌
-            "credit_growth": 1.5,            # 信贷是否还在收缩
-            "cass_freight_yoy": 1.5,         # 实体活动
-        },
-        # 中期收缩: 看能不能见底 — 信贷和政策是关键
-        "mid_contraction": {
-            "credit_growth": 2.0,            # 信贷能不能企稳
-            "lending_standards": 1.8,        # 银行还在收紧吗
-            "fed_funds_rate": 1.5,           # 政策空间
-            "credit_spread_hy": 1.5,         # 市场定价的信用风险
-        },
-        # 晚期杠杆: 杠杆放大一切 — 任何冲击都危险，看信贷+利差
-        "late_leverage": {
-            "credit_spread_hy": 2.0,         # 信用风险是炸药
-            "fed_funds_rate": 1.8,           # 利率是引信
-            "lending_standards": 1.8,        # 银行行为
-            "mortgage_delinquency": 1.5,     # 信贷质量
-        },
-        # 去杠杆: 政策选择决定良性vs恶性
-        "deleveraging": {
-            "fed_funds_rate": 2.0,           # 央行反应
-            "credit_growth": 1.8,            # 信贷能不能重启
-            "credit_spread_hy": 1.5,         # 市场信心
-            "unemployment": 1.5,             # 社会承受力
-        },
-    }
+    # 帝国阶段权重
+    empire_weights = _EMPIRE_VULNERABILITY_WEIGHTS.get(empire_stage.stage, {})
 
-    # 获取当前周期位置对应的权重加成
-    cycle_weights = {}
-    if cycle_position:
-        cycle_weights.update(_CYCLE_VULNERABILITY_WEIGHTS.get(cycle_position.short_cycle, {}))
-        cycle_weights.update(_CYCLE_VULNERABILITY_WEIGHTS.get(cycle_position.long_cycle, {}))
-
-    # ══════════════════════════════════════════
-    # 第一层: 结构性弱点（事前）
-    # 高百分位（张力大）+ 在当前周期是关键 + 下游多（断了影响大）
-    # ══════════════════════════════════════════
-    structural_vulns = []
+    # ── 第一层: 结构性弱点 ──
+    structural_vulns: list[Vulnerability] = []
     for key, a in indicators.items():
         pct = _pct(a)
         connections = downstream_count.get(key, 0)
         if connections == 0:
-            continue  # 没有下游连接的不算弱点（是末端节点）
+            continue
 
-        # 高张力: 百分位>65（有压力但不一定在恶化）
         if pct > 65:
             # 找下游传导链
-            chain_desc = []
-            for up, down, mech in _CAUSAL_CHAIN:
+            chain_parts: list[str] = []
+            empire_context_parts: list[str] = []
+            for up, _, mech, ctx in _CAUSAL_CHAINS:
                 if up == key:
-                    chain_desc.append(mech)
+                    chain_parts.append(mech)
+                    empire_context_parts.append(ctx)
 
-            # 基础分 = 百分位 × 连接度
             base_severity = (pct / 100) * (0.5 + connections * 0.25)
-            # 周期加成: 当前周期位置下这个指标更危险
-            cycle_boost = cycle_weights.get(key, 1.0)
-            severity = min(base_severity * cycle_boost, 1.0)
+            empire_boost = empire_weights.get(key, 1.0)
+            severity = min(base_severity * empire_boost, 1.0)
 
-            cycle_note = ""
-            if cycle_boost > 1.0 and cycle_position:
-                short_cn = _CYCLE_CN.get(cycle_position.short_cycle, cycle_position.short_cycle)
-                long_cn = _CYCLE_CN.get(cycle_position.long_cycle, cycle_position.long_cycle)
-                cycle_note = f" [{short_cn}/{long_cn}阶段关键指标]"
+            empire_ctx = ""
+            if empire_boost > 1.0:
+                empire_ctx = f"帝国阶段{empire_stage.stage}关键指标(权重x{empire_boost:.1f})"
+            if empire_context_parts:
+                empire_ctx += (": " if empire_ctx else "") + empire_context_parts[0]
 
             structural_vulns.append(Vulnerability(
                 location=a.name,
                 severity=round(severity, 2),
-                mechanism=f"结构性弱点(P{pct:.0f}){cycle_note}: 若受冲击 → {' → '.join(chain_desc)}",
-                trigger="任何打到此节点的冲击将沿因果链传导",
+                mechanism=f"P{pct:.0f} → {' → '.join(chain_parts)}" if chain_parts else f"P{pct:.0f}",
+                trigger="冲击此节点将沿因果链传导",
+                empire_context=empire_ctx,
             ))
 
     structural_vulns.sort(key=lambda v: v.severity, reverse=True)
 
-    # ══════════════════════════════════════════
-    # 第二层: 突变检测（事后）
-    # 百分位3个月内跳变>30 = "刚发生了什么"
-    # 关键: 突变打到了哪个结构性弱点？
-    # ══════════════════════════════════════════
-    # 构建 higher_is_worse 查找表
-    _hiw_map = {k: hiw for k, _, hiw in _VULN_INDICATORS}
+    # ── 第二层: 突变检测 ──
+    _hiw_map = {k: hiw for k, _, hiw in _ALL_INDICATORS}
     _hiw_map["retail_sales_growth"] = False
 
-    sudden_vuln = None
-    max_jump = 0
+    sudden_vuln: Vulnerability | None = None
+    max_jump = 0.0
     for key, a in indicators.items():
         pct_now = _pct(a)
         series = derived.get(key)
         if series is None:
             continue
 
-        # 取3个月前的百分位
         year, mo = int(month[:4]), int(month[5:7])
         mo3 = mo - 3
         yr3 = year
@@ -483,345 +622,239 @@ def identify_vulnerabilities(
         if not sorted_m:
             continue
         hist_3ago = [series[m] for m in sorted_m]
-        pct_3ago = compute_percentile(hist_3ago[-1], hist_3ago[:-1] if len(hist_3ago) > 1 else [])
+        pct_3ago = compute_percentile(
+            hist_3ago[-1], hist_3ago[:-1] if len(hist_3ago) > 1 else []
+        )
 
         jump = abs(pct_now - pct_3ago)
 
-        # 只报恶化方向的突变（改善不算脆弱点）
         hiw = _hiw_map.get(key, True)
+        if hiw is None:
+            hiw = True
         if hiw:
-            is_worsening = pct_now > pct_3ago  # higher_is_worse: 百分位升=恶化
+            is_worsening = pct_now > pct_3ago
         else:
-            is_worsening = pct_now < pct_3ago  # lower_is_worse: 百分位降=恶化
+            is_worsening = pct_now < pct_3ago
 
         if not is_worsening:
             continue
 
         if jump > max_jump and jump > 30:
             max_jump = jump
-
-            # 这个突变打到了哪些弱点？
             hit_chains = []
-            for up, down, mech in _CAUSAL_CHAIN:
+            hit_contexts = []
+            for up, _, mech, ctx in _CAUSAL_CHAINS:
                 if up == key:
                     hit_chains.append(mech)
+                    hit_contexts.append(ctx)
 
+            mechanism = f"突变(P{pct_3ago:.0f}→P{pct_now:.0f})"
             if hit_chains:
-                mechanism = f"突变(P{pct_3ago:.0f}→P{pct_now:.0f}) 打到传导链: {' → '.join(hit_chains)}"
-            else:
-                mechanism = f"突变(P{pct_3ago:.0f}→P{pct_now:.0f})"
+                mechanism += f" 打到传导链: {' → '.join(hit_chains)}"
+
+            empire_ctx = hit_contexts[0] if hit_contexts else ""
 
             sudden_vuln = Vulnerability(
                 location=a.name,
                 severity=round(jump / 100, 2),
                 mechanism=mechanism,
                 trigger="冲击已发生，关注下游传导",
+                empire_context=empire_ctx,
             )
 
-    # ══════════════════════════════════════════
-    # 输出: 最多2个
-    # ══════════════════════════════════════════
-    vulns = []
-
-    # 有突变 → 最高优先（事后立刻反应）
+    # 输出最多2个
+    vulns: list[Vulnerability] = []
     if sudden_vuln:
         vulns.append(sudden_vuln)
-
-    # 结构性弱点 → 事前预警
     for sv in structural_vulns:
         if sv.location not in {v.location for v in vulns}:
             vulns.append(sv)
-            break
+            if len(vulns) >= 2:
+                break
 
     return vulns[:2]
 
 
-# ━━ 3. 终点列举 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ━━ 5. 关键问题 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
-# 短周期终点映射 (基于200年经济史的历史先验)
-_SHORT_CYCLE_ENDPOINTS: dict[str, list[tuple[str, str, float, dict[str, str], str]]] = {
-    "early_expansion": [
-        ("continued_expansion", "扩张延续，经济动能增强",
-         0.7, {"equity": "overweight", "bond": "underweight", "gold": "neutral"},
-         "信贷持续扩张+就业改善"),
-        ("double_dip", "二次探底，复苏夭折",
-         0.3, {"equity": "underweight", "bond": "overweight", "gold": "overweight"},
-         "外部冲击或政策过早收紧"),
-    ],
-    "mid_expansion": [
-        ("late_expansion", "进入晚期扩张/过热",
-         0.6, {"equity": "neutral", "bond": "underweight", "gold": "neutral"},
-         "信贷和资产价格继续膨胀"),
-        ("soft_landing", "温和放缓，软着陆",
-         0.3, {"equity": "neutral", "bond": "neutral", "gold": "neutral"},
-         "央行成功引导预期+信贷有序减速"),
-        ("overheating", "经济过热+通胀失控",
-         0.1, {"equity": "underweight", "bond": "underweight", "gold": "overweight"},
-         "通胀预期脱锚+工资-物价螺旋"),
-    ],
-    "late_expansion": [
-        ("soft_landing", "软着陆",
-         0.4, {"equity": "neutral", "bond": "neutral", "gold": "neutral"},
-         "央行精准调控+信贷有序收缩"),
-        ("recession", "衰退",
-         0.4, {"equity": "underweight", "bond": "overweight", "gold": "overweight"},
-         "紧缩过度或外部冲击"),
-        ("stagflation", "滞胀",
-         0.2, {"equity": "underweight", "bond": "underweight", "gold": "overweight"},
-         "供给冲击+通胀顽固+经济放缓"),
-    ],
-    "early_contraction": [
-        ("mild_recession", "温和衰退",
-         0.5, {"equity": "underweight", "bond": "overweight", "gold": "overweight"},
-         "政策及时响应+去杠杆有序"),
-        ("deep_recession", "深度衰退",
-         0.3, {"equity": "strongly_underweight", "bond": "overweight", "gold": "strongly_overweight"},
-         "系统性风险暴露+信贷崩溃"),
-        ("recovery", "快速复苏(V型)",
-         0.2, {"equity": "overweight", "bond": "neutral", "gold": "neutral"},
-         "冲击短暂+基本面健康"),
-    ],
-    "mid_contraction": [
-        ("bottoming", "触底企稳",
-         0.5, {"equity": "neutral", "bond": "overweight", "gold": "neutral"},
-         "信贷企稳+政策效果显现"),
-        ("depression", "萧条",
-         0.2, {"equity": "strongly_underweight", "bond": "overweight", "gold": "strongly_overweight"},
-         "正反馈环失控+政策无效"),
-        ("policy_rescue", "政策强力救市",
-         0.3, {"equity": "overweight", "bond": "neutral", "gold": "overweight"},
-         "大规模财政/货币刺激"),
-    ],
-    "late_contraction": [
-        ("recovery", "经济复苏",
-         0.7, {"equity": "overweight", "bond": "underweight", "gold": "neutral"},
-         "信贷重新扩张+就业回升"),
-        ("stagnation", "长期停滞",
-         0.3, {"equity": "underweight", "bond": "overweight", "gold": "overweight"},
-         "结构性问题未解+人口/生产率拖累"),
-    ],
-}
+def generate_key_question(
+    empire_stage: EmpireStage,
+    forces: list[ForceStatus],
+) -> str:
+    """基于帝国阶段和五力状态，输出当前最关键的一个问题。"""
+    f_map = {f.force_id: f for f in forces}
 
-# 长周期终点修正
-_LONG_CYCLE_EXTRA_ENDPOINTS: dict[str, list[tuple[str, str, float, dict[str, str], str]]] = {
-    "late_leverage": [
-        ("deleveraging_ahead", "去杠杆即将到来",
-         0.4, {"equity": "underweight", "bond": "neutral", "gold": "overweight"},
-         "债务不可持续+触发事件出现"),
-    ],
-    "deleveraging": [
-        ("beautiful_deleveraging", "良性去杠杆(印钱+通胀稀释)",
-         0.5, {"equity": "overweight", "bond": "neutral", "gold": "overweight"},
-         "央行印钱速度匹配债务销毁速度"),
-        ("ugly_deleveraging", "恶性去杠杆(违约+紧缩)",
-         0.5, {"equity": "strongly_underweight", "bond": "uncertain", "gold": "strongly_overweight"},
-         "紧缩政策+违约级联"),
-    ],
-}
+    f5 = f_map.get("f5")
+    f1a = f_map.get("f1a")
+    f1b = f_map.get("f1b")
+    f3 = f_map.get("f3")
+    f2 = f_map.get("f2")
 
+    if empire_stage.stage >= 5:
+        # 阶段5: 最关键的分水岭
+        if f5 and f5.status in ("improving", "key_variable"):
+            return "AI/技术能否带来真正的生产率提升，延缓帝国周期终点到达？"
+        if f1a and f1a.status in ("declining", "accelerating_decline"):
+            return "这次短周期收缩会揭开多少长周期烂账？F1a下行是否触发F1b暴露？"
+        if f3 and f3.status in ("declining", "accelerating_decline"):
+            return "贸易/技术冲突会不会通过供应链打到F1a的弱点？"
+        if f2 and f2.status in ("declining", "accelerating_decline"):
+            return "内部极化是否会导致政策瘫痪，丧失应对危机的能力？"
+        if f1b and f1b.percentile > 70:
+            return "国债利息占财政收入的比例何时突破临界点？"
+        return "哪个力量会率先触发从阶段5到阶段6的跳跃？"
 
-def list_endpoints(position: CyclePosition) -> list[Endpoint]:
-    """从周期位置推导可能的终点。历史规律驱动，非硬编码场景。"""
-    endpoints: list[Endpoint] = []
+    elif empire_stage.stage == 4:
+        if f5 and f5.status in ("improving", "key_variable"):
+            return "技术创新能否延缓过度扩张向冲突期的转化？"
+        if f1b and f1b.percentile > 60:
+            return "债务积累速度是否已超过经济增长速度？临界点在哪？"
+        return "过度扩张的哪个方面会最先暴露 — 债务、不平等、还是外部挑战？"
 
-    # 短周期终点
-    short_eps = _SHORT_CYCLE_ENDPOINTS.get(position.short_cycle, [])
-    for name, desc, prob, assets, cond in short_eps:
-        endpoints.append(Endpoint(
-            name=name,
-            description=desc,
-            historical_probability=prob,
-            asset_implications=assets,
-            key_condition=cond,
-        ))
+    elif empire_stage.stage == 3:
+        return "繁荣期的自满信号是否已经出现？消费是否已超出生产？"
 
-    # 长周期修正
-    long_eps = _LONG_CYCLE_EXTRA_ENDPOINTS.get(position.long_cycle, [])
-    for name, desc, prob, assets, cond in long_eps:
-        # 长周期终点的概率要乘以一个衰减因子，不与短周期概率竞争
-        endpoints.append(Endpoint(
-            name=name,
-            description=desc,
-            historical_probability=round(prob * 0.5, 2),  # 长周期权重较低
-            asset_implications=assets,
-            key_condition=cond,
-        ))
-
-    # 按概率降序
-    endpoints.sort(key=lambda e: e.historical_probability, reverse=True)
-    return endpoints
-
-
-# ━━ 4. 一步推演 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-
-def simulate_one_step(
-    fred_history: dict,
-    month: str,
-    position: CyclePosition,
-) -> NextStep:
-    """
-    看各关键指标的趋势方向，判断"下一步"整体在改善还是恶化。
-    加速的给更大权重。
-    """
-    derived = _build_derived_series(fred_history)
-    indicators = _assess_indicators(_CYCLE_INDICATORS, derived, month)
-
-    improving_weight = 0.0
-    deteriorating_weight = 0.0
-    key_changes: list[str] = []
-
-    for key, a in indicators.items():
-        if _is_improving(a):
-            w = 1.5 if a.trend == TrendTier.ACCELERATING_IMPROVEMENT else 1.0
-            improving_weight += w
-            key_changes.append(f"{a.name}在改善{'(加速)' if w > 1 else ''}")
-        elif _is_deteriorating(a):
-            w = 1.5 if a.trend == TrendTier.ACCELERATING_DETERIORATION else 1.0
-            deteriorating_weight += w
-            key_changes.append(f"{a.name}在恶化{'(加速)' if w > 1 else ''}")
-
-    # 判断整体方向
-    net = improving_weight - deteriorating_weight
-    if net > 1.0:
-        direction = "improving"
-    elif net < -1.0:
-        direction = "deteriorating"
     else:
-        direction = "stable"
+        return "建设期的制度和基建投入质量如何？是否在为未来繁荣奠基？"
 
-    # 推测最接近的终点
-    endpoints = list_endpoints(position)
-    if not endpoints:
-        approaching = "unknown"
-        most_likely = "数据不足以判断下一步"
-    else:
-        # 根据方向选择最可能接近的终点
-        if direction == "deteriorating":
-            # 选负面终点中概率最高的
-            negative_names = {"recession", "deep_recession", "depression",
-                              "stagflation", "ugly_deleveraging", "double_dip",
-                              "mild_recession", "deleveraging_ahead"}
-            neg_eps = [e for e in endpoints if e.name in negative_names]
-            target = neg_eps[0] if neg_eps else endpoints[0]
-        elif direction == "improving":
-            # 选正面终点中概率最高的
-            positive_names = {"continued_expansion", "recovery", "soft_landing",
-                              "beautiful_deleveraging", "late_expansion",
-                              "bottoming", "policy_rescue"}
-            pos_eps = [e for e in endpoints if e.name in positive_names]
-            target = pos_eps[0] if pos_eps else endpoints[0]
+
+# ━━ 6. 下一步推演 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+def _generate_next_step(
+    empire_stage: EmpireStage,
+    forces: list[ForceStatus],
+    vulns: list[Vulnerability],
+) -> str:
+    """基于力量状态和脆弱点，判断下一步最可能发生什么。"""
+    f_map = {f.force_id: f for f in forces}
+    f1a = f_map.get("f1a")
+    f1b = f_map.get("f1b")
+    f5 = f_map.get("f5")
+
+    parts: list[str] = []
+
+    if f1a and f1a.status in ("declining", "accelerating_decline"):
+        parts.append("F1a显示收缩信号")
+        if f1b and f1b.percentile > 70:
+            parts.append("如果继续 → 揭盖器启动，F1b隐藏坏账将暴露")
         else:
-            target = endpoints[0]  # 概率最高的
+            parts.append("短周期调整，但长债务负担尚可控")
+    elif f1a and f1a.status == "improving":
+        parts.append("F1a显示扩张信号")
+        if f1b and f1b.percentile > 70:
+            parts.append("但每次扩张都在给F1b加药量（救助→更多债务）")
 
-        approaching = target.name
-        most_likely = f"整体在{'改善' if direction == 'improving' else '恶化' if direction == 'deteriorating' else '横盘'}中，接近「{target.description}」"
+    if f5 and f5.status == "key_variable":
+        parts.append("F5(技术)是分水岭 — 成败决定续命还是加速")
 
-    return NextStep(
-        most_likely=most_likely,
-        direction=direction,
-        key_changes=key_changes,
-        approaching_endpoint=approaching,
-    )
+    if vulns:
+        parts.append(f"最大脆弱点: {vulns[0].location}")
+
+    return "; ".join(parts) if parts else "各力量相对平稳，等待新的催化剂"
 
 
-# ━━ 5. 统一入口 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ━━ 7. 统一入口 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
 def simulate(fred_history: dict, month: str) -> SimulationResult:
-    """完整预演: 周期定位 → 终点 → 脆弱点(周期感知) → 下一步"""
-    position = identify_cycle_position(fred_history, month)
-    endpoints = list_endpoints(position)
-    vulnerabilities = identify_vulnerabilities(fred_history, month, cycle_position=position)
-    next_step = simulate_one_step(fred_history, month, position)
+    """完整预演: 帝国阶段 → 五力(F1拆分) → 货币冲突 → 脆弱点 → 关键问题"""
+    empire = detect_empire_stage(fred_history, month)
+    forces = assess_forces(fred_history, month, empire)
+    monetary = detect_monetary_conflict(fred_history, month)
+    vulns = identify_vulnerabilities(fred_history, month, empire)
+    question = generate_key_question(empire, forces)
+    next_step = _generate_next_step(empire, forces, vulns)
+
     return SimulationResult(
-        cycle_position=position,
-        endpoints=endpoints,
-        vulnerabilities=vulnerabilities,
+        empire_stage=empire,
+        forces=forces,
+        monetary_conflict=monetary,
+        vulnerabilities=vulns,
         next_step=next_step,
+        key_question=question,
         snapshot_date=month,
     )
 
 
-# ━━ 6. 格式化输出 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ━━ 8. 格式化输出 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
-_CYCLE_CN = {
-    "early_expansion": "早期扩张",
-    "mid_expansion": "中期扩张",
-    "late_expansion": "晚期扩张",
-    "early_contraction": "早期收缩",
-    "mid_contraction": "中期收缩",
-    "late_contraction": "晚期收缩",
-    "early_leverage": "早期杠杆",
-    "mid_leverage": "中期杠杆",
-    "late_leverage": "晚期杠杆",
-    "deleveraging": "去杠杆",
+_STAGE_CN = {
+    "new_order": "第一阶段-新秩序",
+    "building": "第二阶段-建设期",
+    "prosperity": "第三阶段-繁荣期",
+    "overextension": "第四阶段-过度扩张",
+    "conflict": "第五阶段-内外冲突",
+    "restructuring": "第六阶段-重组期",
 }
 
-_DIRECTION_ARROW = {
-    "overweight": "++",
-    "strongly_overweight": "+++",
-    "underweight": "--",
-    "strongly_underweight": "---",
-    "neutral": "~",
-    "uncertain": "?",
+_STATUS_CN = {
+    "accelerating_decline": "加速恶化",
+    "declining": "恶化中",
+    "stable": "稳定",
+    "improving": "改善中",
+    "key_variable": "关键变量",
 }
 
 
 def format_simulation(result: SimulationResult) -> str:
     """人可读的预演输出。"""
     lines: list[str] = []
-    pos = result.cycle_position
+    e = result.empire_stage
 
     lines.append(f"=== 预演快照: {result.snapshot_date} ===")
     lines.append("")
 
-    # 周期位置
-    short_cn = _CYCLE_CN.get(pos.short_cycle, pos.short_cycle)
-    long_cn = _CYCLE_CN.get(pos.long_cycle, pos.long_cycle)
-    lines.append(f"周期位置: 短周期={short_cn}(信心{pos.short_confidence:.2f}), "
-                 f"长周期={long_cn}(信心{pos.long_confidence:.2f})")
-    if pos.evidence:
-        for e in pos.evidence:
-            lines.append(f"  - {e}")
+    # 帝国周期
+    stage_cn = _STAGE_CN.get(e.stage_name, e.stage_name)
+    lines.append(f"帝国周期: {stage_cn} (信心{e.confidence:.2f})")
+    lines.append(f"  终点: {e.destination}")
+    lines.append(f"  关键变量: {e.key_variable}")
+    if e.evidence:
+        for ev in e.evidence:
+            lines.append(f"  - {ev}")
     lines.append("")
 
-    # 可能终点
-    lines.append("可能终点:")
-    for i, ep in enumerate(result.endpoints, 1):
-        assets_str = ", ".join(
-            f"{k}{_DIRECTION_ARROW.get(v, v)}"
-            for k, v in ep.asset_implications.items()
-        )
-        lines.append(f"  {i}. {ep.description} ({ep.historical_probability:.0%}) "
-                      f"— {assets_str}")
-        lines.append(f"     关键条件: {ep.key_condition}")
+    # 五力状态
+    lines.append("五力状态:")
+    for f in result.forces:
+        status_cn = _STATUS_CN.get(f.status, f.status)
+        lines.append(f"  {f.force_id.upper()} {f.force_name}: P{f.percentile:.0f} {status_cn}")
+        lines.append(f"     角色: {f.role_in_empire}")
+    lines.append("")
+
+    # 货币政策冲突
+    if result.monetary_conflict:
+        mc = result.monetary_conflict
+        lines.append(f"货币政策: 约束冲突 (严重度{mc.severity:.2f})")
+        for c in mc.conflicting_mandates:
+            lines.append(f"  - {c}")
+        lines.append(f"  最可能牺牲: {mc.most_likely_sacrifice}")
+    else:
+        lines.append("货币政策: 约束尚可调和")
     lines.append("")
 
     # 脆弱点
     if result.vulnerabilities:
         lines.append("脆弱点:")
-        for v in result.vulnerabilities:
+        for i, v in enumerate(result.vulnerabilities, 1):
             sev_bar = "!" * max(1, int(v.severity * 5))
-            lines.append(f"  [{sev_bar}] {v.location} (严重度{v.severity:.2f})")
-            lines.append(f"      机制: {v.mechanism}")
-            lines.append(f"      触发: {v.trigger}")
+            lines.append(f"  {i}. [{sev_bar}] {v.location} (严重度{v.severity:.2f})")
+            lines.append(f"     传导: {v.mechanism}")
+            if v.empire_context:
+                lines.append(f"     帝国语境: {v.empire_context}")
     else:
         lines.append("脆弱点: 暂无显著脆弱点")
     lines.append("")
 
+    # 关键问题
+    lines.append(f"关键问题: {result.key_question}")
+    lines.append("")
+
     # 下一步
-    ns = result.next_step
-    dir_cn = {"improving": "改善中", "deteriorating": "恶化中", "stable": "横盘中"}
-    lines.append(f"下一步: 整体{dir_cn.get(ns.direction, ns.direction)}，"
-                 f"接近「{ns.approaching_endpoint}」")
-    lines.append(f"  {ns.most_likely}")
-    if ns.key_changes:
-        lines.append("  关键变化:")
-        for c in ns.key_changes:
-            lines.append(f"    - {c}")
+    lines.append(f"下一步: {result.next_step}")
 
     return "\n".join(lines)
 

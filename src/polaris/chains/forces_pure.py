@@ -13,6 +13,10 @@
   - 事后复盘的具体模式
 
 所有判断基于: 百分位(在历史中的位置) + 趋势(方向和加速度)
+
+F1 拆分: 短债务周期(F1a) + 长债务周期(F1b)
+  F1a: 可通过货币政策调节的短期信贷周期
+  F1b: 不可逆积累的长期债务结构
 """
 
 from __future__ import annotations
@@ -27,36 +31,45 @@ from anchor.compute.percentile_trend import (
 
 # ── 指标定义: (fred_history_key, display_name, higher_is_worse) ──────────
 
-# 金融原理: 利率传导、信贷周期、杠杆脆弱性
-FORCE1_INDICATORS = [
+# F1a 短债务周期: 可通过货币政策调节
+FORCE1A_INDICATORS = [
     # 金融原理: 利率水平决定偿债成本
     ("fed_funds_rate", "基准利率", True),
     # 金融原理: 信贷扩张/收缩驱动经济周期
     ("credit_growth", "信贷增速", False),     # 低增速=收缩=差
-    # 历史规律: 高债务/GDP = 经济脆弱
-    ("total_debt_gdp", "总债务/GDP", True),
     # 经济常识: 失业上升 = 经济恶化
     ("unemployment", "失业率", True),
     # 经济常识: 通胀偏离 = 央行要行动
     ("cpi_yoy", "CPI同比", True),
     # 经济常识: GDP增速下降 = 经济放缓
     ("gdp_growth", "GDP增速", False),
-    # 金融原理: 逾期率上升 = 信贷质量恶化
-    ("mortgage_delinquency", "房贷逾期率", True),
-    # 金融原理: 杠杆高 = 系统脆弱
-    ("financial_leverage", "金融杠杆", True),
     # 金融原理: 银行收紧 = 信贷即将收缩
     ("lending_standards", "贷款标准收紧", True),
-    # 金融原理: 家庭债务过高 = 消费脆弱
-    ("household_debt_gdp", "家庭债务/GDP", True),
-    # 金融原理: 偿债负担重 = 消费被挤压
-    ("mortgage_debt_service", "房贷偿付比", True),
     # 金融原理: 高收益利差 = 信用风险定价
     ("credit_spread_hy", "高收益利差", True),
     # 金融原理: 消费贷增速过快 = 家庭在借钱消费，不可持续
     ("consumer_credit_growth", "消费贷增速", True),
     # 金融原理: 信用卡逾期率上升 = 消费者还不起钱了
     ("credit_card_delinquency", "信用卡逾期率", True),
+]
+
+# F1b 长债务周期: 不可逆积累
+FORCE1B_INDICATORS = [
+    # 历史规律: 高债务/GDP = 经济脆弱（不可逆积累）
+    ("total_debt_gdp", "总债务/GDP", True),
+    # 金融原理: 家庭债务过高 = 消费脆弱（长期结构）
+    ("household_debt_gdp", "家庭债务/GDP", True),
+    # 金融原理: 偿债负担重 = 消费被挤压
+    ("mortgage_debt_service", "房贷偿付比", True),
+    # 金融原理: 逾期率上升 = 信贷质量恶化
+    ("mortgage_delinquency", "房贷逾期率", True),
+]
+
+# 向后兼容: FORCE1_INDICATORS = F1a + F1b 的完整列表
+# 注意: 原列表还包含 financial_leverage，保留在合并列表中
+FORCE1_INDICATORS = FORCE1A_INDICATORS + FORCE1B_INDICATORS + [
+    # 金融原理: 杠杆高 = 系统脆弱 (不归入F1a或F1b，是放大器)
+    ("financial_leverage", "金融杠杆", True),
 ]
 
 # 经济常识: 社会稳定性影响政策可预测性
@@ -217,11 +230,40 @@ def _build_derived_series(fred: dict) -> dict[str, dict[str, float]]:
 # ── Pure 模式评估 ──────────────────────────────────────────────────────
 
 
+def _assess_force(
+    indicators: list[tuple[str, str, bool | None]],
+    derived: dict,
+    month: str,
+) -> tuple:
+    """评估单个力量，返回 (direction, confidence, assessments)。"""
+    assessments = []
+    for data_key, display_name, higher_is_worse in indicators:
+        series = derived.get(data_key)
+        if series is None:
+            continue
+
+        # 美元方向不确定，看波动幅度
+        if higher_is_worse is None:
+            series = {m: abs(v) for m, v in series.items()}
+            higher_is_worse = True
+
+        a = assess_from_fred_history(
+            display_name, month, series, higher_is_worse
+        )
+        if a.value is not None:
+            assessments.append(a)
+
+    direction, confidence = aggregate_force_direction(assessments)
+    return (direction, confidence, assessments)
+
+
 def assess_forces_pure(
     fred_history: dict,
     month: str,
 ) -> dict:
     """Pure模式五力评估: 只用百分位+趋势+金融原理/经济常识/历史规律。
+
+    F1 拆分为 F1a(短债务) + F1b(长债务)，同时保留合并的 force1 兼容键。
 
     Args:
         fred_history: 原始FRED月度数据 {"indicator": {"YYYY-MM": value}}
@@ -229,7 +271,9 @@ def assess_forces_pure(
 
     Returns:
         {
-            "force1": (direction, confidence, assessments),
+            "force1a": (direction, confidence, assessments),
+            "force1b": (direction, confidence, assessments),
+            "force1": (direction, confidence, assessments),  # 兼容: F1a+F1b合并
             "force2": ...,
             "force3": ...,
             "force4": ...,
@@ -239,35 +283,23 @@ def assess_forces_pure(
     derived = _build_derived_series(fred_history)
 
     results = {}
-    force_configs = [
-        ("force1", FORCE1_INDICATORS),
+
+    # F1a 短债务 + F1b 长债务 分开评估
+    results["force1a"] = _assess_force(FORCE1A_INDICATORS, derived, month)
+    results["force1b"] = _assess_force(FORCE1B_INDICATORS, derived, month)
+
+    # 兼容键: force1 = F1a + F1b 的所有指标合并评估
+    # 使用完整的 FORCE1_INDICATORS (包含 financial_leverage)
+    results["force1"] = _assess_force(FORCE1_INDICATORS, derived, month)
+
+    # F2-F5
+    for force_key, indicators in [
         ("force2", FORCE2_INDICATORS),
         ("force3", FORCE3_INDICATORS),
         ("force4", FORCE4_INDICATORS),
         ("force5", FORCE5_INDICATORS),
-    ]
-
-    for force_key, indicators in force_configs:
-        assessments = []
-        for data_key, display_name, higher_is_worse in indicators:
-            series = derived.get(data_key)
-            if series is None:
-                continue
-
-            # 美元方向不确定，看波动幅度
-            if higher_is_worse is None:
-                # 取绝对值，大波动=差
-                series = {m: abs(v) for m, v in series.items()}
-                higher_is_worse = True
-
-            a = assess_from_fred_history(
-                display_name, month, series, higher_is_worse
-            )
-            if a.value is not None:
-                assessments.append(a)
-
-        direction, confidence = aggregate_force_direction(assessments)
-        results[force_key] = (direction, confidence, assessments)
+    ]:
+        results[force_key] = _assess_force(indicators, derived, month)
 
     return results
 
