@@ -90,6 +90,35 @@ _FORCE5_SERIES = {
     ("VAPGDPI", "info_sector_gdp_share", "direct"),        # 信息产业增加值/GDP (季度, %)
 }
 
+# ── 玩家追踪: 市场参与者行为 (谁在买/卖, 杠杆, 资金流向) ──
+_PLAYER_SERIES = {
+    # 银行资产负债表 (Fed H.8)
+    ("BUSLOANS", "bank_ci_loans", "direct"),            # 商业贷款 (十亿$)
+    ("REALLN", "bank_re_loans", "direct"),              # 地产贷款
+    ("CONSUMER", "bank_consumer_loans", "direct"),      # 消费贷款
+    # 全球央行
+    ("ECBASSETSW", "ecb_assets", "direct"),             # ECB资产负债表 (周度)
+    ("JPNASSETS", "boj_assets", "direct"),              # BOJ资产负债表 (月度)
+    # Fed紧急贷款
+    ("WLCFLPCL", "fed_primary_credit", "direct"),       # Fed贴现窗口 (>0=有银行求救)
+    ("TOTRESNS", "bank_reserves", "direct"),            # 银行准备金
+    # 银行间市场
+    ("EFFR", "effective_ff_rate", "direct"),            # 有效联邦基金利率 (日度)
+    # 信贷质量分层 (私募信贷代理)
+    ("BAMLH0A3HYCEY", "yield_ccc", "direct"),          # CCC级债券收益率
+    ("BAMLH0A1HYBBEY", "yield_bb", "direct"),          # BB级
+    ("BAMLC0A4CBBBEY", "yield_bbb", "direct"),         # BBB级
+    # 外国玩家
+    ("TRESEGCNM052N", "china_reserves", "direct"),     # 中国外汇储备
+    # 避险流向
+    ("WRMFNS", "money_market_funds", "direct"),         # 货币基金规模
+    # 金融条件/压力
+    ("NFCI", "nfci", "direct"),                        # 芝加哥联储金融条件指数
+    ("STLFSI4", "financial_stress", "direct"),         # 圣路易斯金融压力指数
+    # 制造业
+    ("IPMAN", "manufacturing_ip", "direct"),           # 制造业产出指数
+}
+
 # ── 索罗斯: 衍生品 + 市场信念信号 (跨 Force, 单独分组) ──
 _SOROS_SERIES = {
     ("VIXCLS", "vix", "direct"),                           # VIX (日度)
@@ -193,6 +222,7 @@ def fetch_five_forces_from_fred(api_key: str | None = None) -> dict[str, dict]:
         (4, _FORCE4_SERIES),
         (5, _FORCE5_SERIES),
         ("soros", _SOROS_SERIES),
+        ("players", _PLAYER_SERIES),
     ]
     all_series_ids = set()
     for _, mappings in all_mappings:
