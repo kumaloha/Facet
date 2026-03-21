@@ -91,6 +91,9 @@ class SimulationResult:
 
     snapshot_date: str
 
+    # 玩家地图（可选，谁在买/卖/有压力）
+    player_map: object | None = None
+
     # 新闻上下文（可选，用于给脆弱点提供具体解释）
     news_context: list = field(default_factory=list)
 
@@ -812,13 +815,24 @@ def _event_matches_vulnerability(event, vuln) -> bool:
 
 
 def simulate(fred_history: dict, month: str, news_events: list | None = None) -> SimulationResult:
-    """完整预演: 帝国阶段 → 五力(F1拆分) → 货币冲突 → 脆弱点 → 关键问题"""
+    """完整预演: 帝国阶段 → 五力(F1拆分) → 玩家地图 → 货币冲突 → 脆弱点 → 关键问题"""
     empire = detect_empire_stage(fred_history, month)
     forces = assess_forces(fred_history, month, empire)
     monetary = detect_monetary_conflict(fred_history, month)
     vulns = identify_vulnerabilities(fred_history, month, empire)
     question = generate_key_question(empire, forces)
     next_step = _generate_next_step(empire, forces, vulns)
+
+    # 玩家地图
+    player_map = None
+    try:
+        from anchor.compute.player_tracker import build_player_map
+        player_map = build_player_map(fred_history, month)
+
+        # 用玩家信息丰富脆弱点描述
+        _enrich_vulns_with_players(vulns, player_map)
+    except Exception:
+        pass  # 玩家数据不可用时不影响核心预演
 
     result = SimulationResult(
         empire_stage=empire,
@@ -828,12 +842,55 @@ def simulate(fred_history: dict, month: str, news_events: list | None = None) ->
         next_step=next_step,
         key_question=question,
         snapshot_date=month,
+        player_map=player_map,
     )
 
     if news_events:
         enrich_with_news(result, news_events)
 
     return result
+
+
+def _enrich_vulns_with_players(vulns: list[Vulnerability], player_map) -> None:
+    """用玩家地图丰富脆弱点——指出具体哪个玩家在承压。"""
+    if not player_map:
+        return
+
+    stressed_players = []
+    if player_map.banks.health != "healthy":
+        stressed_players.append(f"银行({player_map.banks.detail})")
+    if player_map.private_credit.health != "healthy":
+        stressed_players.append(f"私募信贷({player_map.private_credit.detail})")
+    if player_map.foreign_governments.health != "healthy":
+        stressed_players.append(f"外国政府({player_map.foreign_governments.detail})")
+    if player_map.retail.health != "healthy":
+        stressed_players.append(f"散户({player_map.retail.detail})")
+
+    if not stressed_players:
+        return
+
+    for vuln in vulns:
+        # 利率/信贷相关脆弱点 → 指出哪些玩家在承压
+        loc = vuln.location.lower()
+        relevant = []
+        if any(k in loc for k in ["利率", "信贷", "贷款", "利差"]):
+            if player_map.private_credit.health != "healthy":
+                relevant.append(f"私募信贷({player_map.private_credit.detail})")
+            if player_map.banks.health != "healthy":
+                relevant.append(f"银行({player_map.banks.detail})")
+        elif any(k in loc for k in ["运输", "进口", "供应链"]):
+            if player_map.foreign_governments.health != "healthy":
+                relevant.append(f"外国政府({player_map.foreign_governments.detail})")
+        elif any(k in loc for k in ["货币", "基金"]):
+            if player_map.retail.health != "healthy":
+                relevant.append(f"散户({player_map.retail.detail})")
+
+        if not relevant:
+            # 兜底: 列出所有承压玩家
+            relevant = stressed_players
+
+        if relevant:
+            vuln.mechanism += f"\n     承压玩家: {'; '.join(relevant)}"
 
 
 # ━━ 8. 格式化输出 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -893,6 +950,26 @@ def format_simulation(result: SimulationResult) -> str:
     else:
         lines.append("货币政策: 约束尚可调和")
     lines.append("")
+
+    # 玩家地图
+    if result.player_map:
+        pm = result.player_map
+        _health_icon = {"healthy": "🟢", "stressed": "🟡", "crisis": "🔴"}
+        lines.append("玩家地图:")
+        for name, pg in [
+            ("银行", pm.banks),
+            ("央行", pm.central_banks),
+            ("私募信贷", pm.private_credit),
+            ("外国政府", pm.foreign_governments),
+            ("散户", pm.retail),
+        ]:
+            icon = _health_icon.get(pg.health, "?")
+            lines.append(f"  {icon} {name}: {pg.health} ({pg.trend}) — {pg.detail}")
+        lines.append(f"  资金流向: {pm.capital_flow_direction}")
+        if pm.stress_signals:
+            for s in pm.stress_signals:
+                lines.append(f"  ⚠ {s}")
+        lines.append("")
 
     # 脆弱点
     if result.vulnerabilities:
