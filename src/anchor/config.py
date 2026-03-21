@@ -208,14 +208,16 @@ class Settings(BaseSettings):
 
 
 DEFAULT_RSS_FEEDS = [
+    # 英文财经（免费可用）
+    "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114",  # CNBC Top
+    "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=20910258",   # CNBC Economy
+    "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664",   # CNBC Finance
+    "https://finance.yahoo.com/news/rssindex",        # Yahoo Finance
+    "https://feeds.content.dowjones.io/public/rss/mw_topstories",  # MarketWatch
+    "https://www.investing.com/rss/news.rss",          # Investing.com
     # 中文财经
-    "https://feedx.net/rss/cailianshe.xml",          # 财联社
-    "https://36kr.com/feed",                          # 36氪
-    "https://www.cls.cn/rss",                         # 财联社备用
-    # 英文财经
-    "https://feeds.bloomberg.com/markets/news.rss",
-    "https://feeds.reuters.com/reuters/businessNews",
-    "https://www.wsj.com/xml/rss/3_7031.xml",        # WSJ Markets
+    "https://feedx.net/rss/cailianshe.xml",            # 财联社
+    "https://36kr.com/feed",                            # 36氪
 ]
 
 
