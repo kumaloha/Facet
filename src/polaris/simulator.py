@@ -306,17 +306,31 @@ _DIVERGENCES = [
 ]
 
 
-def identify_vulnerabilities(fred_history: dict, month: str) -> list[Vulnerability]:
+def identify_vulnerabilities(
+    fred_history: dict,
+    month: str,
+    cycle_position: CyclePosition | None = None,
+) -> list[Vulnerability]:
     """
-    找传导链上最脆弱的1-2个点——牵一发动全身的源头，不是列清单。
+    两层脆弱点识别:
 
-    逻辑：
-    1. 评估所有指标
-    2. 在因果传导链上找最上游的恶化点（因，不是果）
-    3. 如果有背离（领先指标在恶化但滞后指标还好）→ 这是最有价值的预警
-    4. 最多输出2个
+    第一层（事前，常态）: 系统的结构性弱点
+      "如果遭到冲击，系统会在哪里断裂？"
+      = 百分位高位（张力大）+ 在当前周期位置是关键指标 + 下游连接多
+
+      弱点随周期位置变化（大周期先验经验）:
+      - 晚期扩张: 信贷质量+利率（借了太多+加息打到偿债）
+      - 早期收缩: 就业+消费（失业→消费→更多失业的正反馈）
+      - 晚期杠杆: 任何外部冲击都被杠杆放大→看信贷+利差
+      - 去杠杆: 政策反应（印钱vs紧缩）→看利率+货币供应
+
+    第二层（事后，冲击发生时）: 突变打到了哪个弱点
+      "刚才发生了什么？打到了哪？"
+      = 百分位短期跳变 → 匹配到传导链
+
+    最多输出2个。
     """
-    from anchor.compute.percentile_trend import SignalTier
+    from anchor.compute.percentile_trend import SignalTier, compute_percentile
 
     derived = _build_derived_series(fred_history)
     indicators = _assess_indicators(_VULN_INDICATORS, derived, month)
@@ -329,69 +343,135 @@ def identify_vulnerabilities(fred_history: dict, month: str) -> list[Vulnerabili
             if a.value is not None:
                 indicators[key] = a
 
-    def _is_bad(a):
-        return a.tier in (SignalTier.DETERIORATING, SignalTier.EXTREME_DETERIORATION)
-
     # ── 因果传导链（金融原理/经济常识）──
-    # 上游 → 下游: 上游恶化会导致下游跟着恶化
-    # 找到最上游的恶化点 = 真正的脆弱点
     _CAUSAL_CHAIN = [
-        # (上游, 下游, 传导机制)
         ("lending_standards", "credit_growth", "银行收紧→信贷收缩"),
         ("credit_growth", "gdp_growth", "信贷收缩→经济放缓"),
         ("credit_growth", "unemployment", "信贷收缩→企业裁员"),
         ("fed_funds_rate", "mortgage_delinquency", "利率升→还款压力→逾期"),
         ("fed_funds_rate", "credit_spread_hy", "利率升→融资成本→信用风险"),
-        ("mortgage_delinquency", "financial_leverage", "逾期→抵押品减值→杠杆暴露"),
-        ("financial_leverage", "credit_growth", "杠杆暴露→银行惜贷→信贷缩"),
         ("unemployment", "retail_sales_growth", "失业→消费下降"),
         ("consumer_credit_growth", "credit_card_delinquency", "过度借贷→还不起"),
+        # 供应链传导
+        ("cass_freight_yoy", "gdp_growth", "货运中断→生产停滞→GDP下降"),
+        ("cass_freight_yoy", "unemployment", "供应链断→企业停工→失业"),
+        ("import_price_yoy", "cpi_yoy", "进口成本飙升→通胀"),
+        ("transport_cpi_yoy", "import_price_yoy", "运输成本升→进口成本升"),
     ]
 
-    # 找所有在恶化的指标
-    bad_indicators = {k for k, a in indicators.items() if _is_bad(a)}
-
-    if not bad_indicators:
-        return []
-
-    # 计算每个恶化指标的"上游度"：被多少其他恶化指标依赖
-    # 上游度高 = 是源头，打断它可以阻止连锁
-    upstream_score = {k: 0 for k in bad_indicators}
+    # 计算每个指标的下游连接数（影响面）
+    downstream_count = {}
     for upstream, downstream, _ in _CAUSAL_CHAIN:
-        if upstream in bad_indicators and downstream in bad_indicators:
-            upstream_score[upstream] = upstream_score.get(upstream, 0) + 1
-        # 如果下游在恶化但上游不在 → 上游不是问题
-        # 如果上游在恶化但下游还没 → 上游是预警源头，额外加分
-        if upstream in bad_indicators and downstream not in bad_indicators:
-            upstream_score[upstream] = upstream_score.get(upstream, 0) + 2  # 领先信号更重要
+        downstream_count[upstream] = downstream_count.get(upstream, 0) + 1
 
-    # ── 背离检测: 领先指标恶化 + 滞后指标还好 = 最有价值的预警 ──
-    divergence_vulns = []
-    for key_a, key_b, desc in _DIVERGENCES:
-        a = indicators.get(key_a)
-        b = indicators.get(key_b)
-        if a is None or b is None:
-            continue
-        a_ok = a.tier in (SignalTier.IMPROVING, SignalTier.EXTREME_IMPROVEMENT, SignalTier.NEUTRAL)
-        b_bad = _is_bad(b)
-        if a_ok and b_bad:
-            divergence_vulns.append(Vulnerability(
-                location=b.name,
-                severity=round(_pct(b) / 100, 2),
-                mechanism=desc,
-                trigger=f"若{a.name}开始跟随{b.name}恶化，将剧烈收敛",
+    # ══════════════════════════════════════════
+    # 大周期先验: 不同周期位置，不同指标是关键弱点
+    # 这是达利欧从几百年历史中总结的规律
+    # ══════════════════════════════════════════
+    # 周期位置 → 哪些指标在这个阶段特别危险（权重加成）
+    _CYCLE_VULNERABILITY_WEIGHTS: dict[str, dict[str, float]] = {
+        # 晚期扩张: 借了太多，加息打到偿债 — 信贷质量是命门
+        "late_expansion": {
+            "mortgage_delinquency": 2.0,     # 信贷质量开始恶化
+            "credit_card_delinquency": 2.0,  # 消费端信贷质量
+            "fed_funds_rate": 1.8,           # 加息→偿债
+            "lending_standards": 1.5,        # 银行感知到风险
+            "consumer_credit_growth": 1.5,   # 过度借贷
+        },
+        # 早期收缩: 失业→消费→更多失业的正反馈 — 就业是命门
+        "early_contraction": {
+            "unemployment": 2.0,             # 失业正反馈的核心
+            "retail_sales_growth": 1.8,      # 消费崩塌
+            "credit_growth": 1.5,            # 信贷是否还在收缩
+            "cass_freight_yoy": 1.5,         # 实体活动
+        },
+        # 中期收缩: 看能不能见底 — 信贷和政策是关键
+        "mid_contraction": {
+            "credit_growth": 2.0,            # 信贷能不能企稳
+            "lending_standards": 1.8,        # 银行还在收紧吗
+            "fed_funds_rate": 1.5,           # 政策空间
+            "credit_spread_hy": 1.5,         # 市场定价的信用风险
+        },
+        # 晚期杠杆: 杠杆放大一切 — 任何冲击都危险，看信贷+利差
+        "late_leverage": {
+            "credit_spread_hy": 2.0,         # 信用风险是炸药
+            "fed_funds_rate": 1.8,           # 利率是引信
+            "lending_standards": 1.8,        # 银行行为
+            "mortgage_delinquency": 1.5,     # 信贷质量
+        },
+        # 去杠杆: 政策选择决定良性vs恶性
+        "deleveraging": {
+            "fed_funds_rate": 2.0,           # 央行反应
+            "credit_growth": 1.8,            # 信贷能不能重启
+            "credit_spread_hy": 1.5,         # 市场信心
+            "unemployment": 1.5,             # 社会承受力
+        },
+    }
+
+    # 获取当前周期位置对应的权重加成
+    cycle_weights = {}
+    if cycle_position:
+        cycle_weights.update(_CYCLE_VULNERABILITY_WEIGHTS.get(cycle_position.short_cycle, {}))
+        cycle_weights.update(_CYCLE_VULNERABILITY_WEIGHTS.get(cycle_position.long_cycle, {}))
+
+    # ══════════════════════════════════════════
+    # 第一层: 结构性弱点（事前）
+    # 高百分位（张力大）+ 在当前周期是关键 + 下游多（断了影响大）
+    # ══════════════════════════════════════════
+    structural_vulns = []
+    for key, a in indicators.items():
+        pct = _pct(a)
+        connections = downstream_count.get(key, 0)
+        if connections == 0:
+            continue  # 没有下游连接的不算弱点（是末端节点）
+
+        # 高张力: 百分位>65（有压力但不一定在恶化）
+        if pct > 65:
+            # 找下游传导链
+            chain_desc = []
+            for up, down, mech in _CAUSAL_CHAIN:
+                if up == key:
+                    chain_desc.append(mech)
+
+            # 基础分 = 百分位 × 连接度
+            base_severity = (pct / 100) * (0.5 + connections * 0.25)
+            # 周期加成: 当前周期位置下这个指标更危险
+            cycle_boost = cycle_weights.get(key, 1.0)
+            severity = min(base_severity * cycle_boost, 1.0)
+
+            cycle_note = ""
+            if cycle_boost > 1.0 and cycle_position:
+                short_cn = _CYCLE_CN.get(cycle_position.short_cycle, cycle_position.short_cycle)
+                long_cn = _CYCLE_CN.get(cycle_position.long_cycle, cycle_position.long_cycle)
+                cycle_note = f" [{short_cn}/{long_cn}阶段关键指标]"
+
+            structural_vulns.append(Vulnerability(
+                location=a.name,
+                severity=round(severity, 2),
+                mechanism=f"结构性弱点(P{pct:.0f}){cycle_note}: 若受冲击 → {' → '.join(chain_desc)}",
+                trigger="任何打到此节点的冲击将沿因果链传导",
             ))
 
-    # ── 突变检测: 百分位短期跳变最大的指标（事后检测，如COVID）──
-    # 比较当月和3个月前的百分位，差值最大的 = "刚发生了什么"
+    structural_vulns.sort(key=lambda v: v.severity, reverse=True)
+
+    # ══════════════════════════════════════════
+    # 第二层: 突变检测（事后）
+    # 百分位3个月内跳变>30 = "刚发生了什么"
+    # 关键: 突变打到了哪个结构性弱点？
+    # ══════════════════════════════════════════
+    # 构建 higher_is_worse 查找表
+    _hiw_map = {k: hiw for k, _, hiw in _VULN_INDICATORS}
+    _hiw_map["retail_sales_growth"] = False
+
     sudden_vuln = None
     max_jump = 0
     for key, a in indicators.items():
         pct_now = _pct(a)
-        # 取3个月前的百分位
         series = derived.get(key)
         if series is None:
             continue
+
+        # 取3个月前的百分位
         year, mo = int(month[:4]), int(month[5:7])
         mo3 = mo - 3
         yr3 = year
@@ -399,68 +479,60 @@ def identify_vulnerabilities(fred_history: dict, month: str) -> list[Vulnerabili
             mo3 += 12
             yr3 -= 1
         month_3ago = f"{yr3}-{mo3:02d}"
-
-        # 找到3个月前最近的值
         sorted_m = sorted(m for m in series if m <= month_3ago)
         if not sorted_m:
             continue
-        hist_up_to_3ago = [series[m] for m in sorted(m for m in series if m <= month_3ago)]
-        if not hist_up_to_3ago:
-            continue
-        from anchor.compute.percentile_trend import compute_percentile
-        pct_3ago = compute_percentile(hist_up_to_3ago[-1], hist_up_to_3ago[:-1] if len(hist_up_to_3ago) > 1 else [])
+        hist_3ago = [series[m] for m in sorted_m]
+        pct_3ago = compute_percentile(hist_3ago[-1], hist_3ago[:-1] if len(hist_3ago) > 1 else [])
 
         jump = abs(pct_now - pct_3ago)
-        if jump > max_jump and jump > 30:  # 百分位跳变>30才算突变
+
+        # 只报恶化方向的突变（改善不算脆弱点）
+        hiw = _hiw_map.get(key, True)
+        if hiw:
+            is_worsening = pct_now > pct_3ago  # higher_is_worse: 百分位升=恶化
+        else:
+            is_worsening = pct_now < pct_3ago  # lower_is_worse: 百分位降=恶化
+
+        if not is_worsening:
+            continue
+
+        if jump > max_jump and jump > 30:
             max_jump = jump
-            direction = "恶化" if pct_now > pct_3ago else "改善"
+
+            # 这个突变打到了哪些弱点？
+            hit_chains = []
+            for up, down, mech in _CAUSAL_CHAIN:
+                if up == key:
+                    hit_chains.append(mech)
+
+            if hit_chains:
+                mechanism = f"突变(P{pct_3ago:.0f}→P{pct_now:.0f}) 打到传导链: {' → '.join(hit_chains)}"
+            else:
+                mechanism = f"突变(P{pct_3ago:.0f}→P{pct_now:.0f})"
+
             sudden_vuln = Vulnerability(
                 location=a.name,
                 severity=round(jump / 100, 2),
-                mechanism=f"3个月内百分位从P{pct_3ago:.0f}突变到P{pct_now:.0f}（{direction}）",
-                trigger="突发冲击已发生，关注传导扩散",
+                mechanism=mechanism,
+                trigger="冲击已发生，关注下游传导",
             )
 
-    # ── 选出最关键的1-2个 ──
+    # ══════════════════════════════════════════
+    # 输出: 最多2个
+    # ══════════════════════════════════════════
     vulns = []
 
-    # 优先级1: 突变（"刚发生了什么" — 如COVID导致失业突变）
+    # 有突变 → 最高优先（事后立刻反应）
     if sudden_vuln:
         vulns.append(sudden_vuln)
 
-    # 优先级2: 背离（预警价值最高——"还没人看到但即将发生"）
-    if divergence_vulns:
-        divergence_vulns.sort(key=lambda v: v.severity, reverse=True)
-        for dv in divergence_vulns:
-            if dv.location not in {v.location for v in vulns}:
-                vulns.append(dv)
-                break
+    # 结构性弱点 → 事前预警
+    for sv in structural_vulns:
+        if sv.location not in {v.location for v in vulns}:
+            vulns.append(sv)
+            break
 
-    # 优先级3: 传导链最上游的恶化点
-    if len(vulns) < 2 and upstream_score:
-        top_upstream = sorted(upstream_score.items(), key=lambda x: -x[1])
-        for key, score in top_upstream:
-            if score > 0 and key not in {v.location for v in vulns}:
-                a = indicators[key]
-                downstream_names = []
-                for up, down, mech in _CAUSAL_CHAIN:
-                    if up == key and down in bad_indicators:
-                        downstream_names.append(f"{indicators[down].name}")
-
-                if downstream_names:
-                    mechanism = f"传导链源头 → {' → '.join(downstream_names)}"
-                else:
-                    mechanism = "领先信号恶化，下游尚未跟随"
-
-                vulns.append(Vulnerability(
-                    location=a.name,
-                    severity=round(_pct(a) / 100, 2),
-                    mechanism=mechanism,
-                    trigger="下游指标开始跟随恶化时确认",
-                ))
-                break
-
-    # 最多2个
     return vulns[:2]
 
 
@@ -658,10 +730,10 @@ def simulate_one_step(
 
 
 def simulate(fred_history: dict, month: str) -> SimulationResult:
-    """完整预演: 周期定位 → 终点 → 脆弱点 → 下一步"""
+    """完整预演: 周期定位 → 终点 → 脆弱点(周期感知) → 下一步"""
     position = identify_cycle_position(fred_history, month)
     endpoints = list_endpoints(position)
-    vulnerabilities = identify_vulnerabilities(fred_history, month)
+    vulnerabilities = identify_vulnerabilities(fred_history, month, cycle_position=position)
     next_step = simulate_one_step(fred_history, month, position)
     return SimulationResult(
         cycle_position=position,
