@@ -553,6 +553,7 @@ class BacktestEngine:
         derivative_yaml: str | None = None,
         use_stock_selection: bool = False,
         max_stock_corr: float = 0.7,
+        use_sector_rotation: bool = False,
     ):
         self.strategy = strategy
         self.leverage = leverage
@@ -561,6 +562,7 @@ class BacktestEngine:
         self.derivative_yaml = derivative_yaml
         self.use_stock_selection = use_stock_selection
         self.max_stock_corr = max_stock_corr
+        self.use_sector_rotation = use_sector_rotation
 
         # 加载数据
         self.monthly_returns = _load_json("data_monthly_returns.json")
@@ -573,6 +575,15 @@ class BacktestEngine:
         self._stock_returns = None
         if self.use_stock_selection:
             self._load_stock_data()
+
+        # 行业轮动数据 (按需加载)
+        self._sector_returns = None
+        self._sector_weights = None
+        if self.use_sector_rotation:
+            try:
+                self._sector_returns = _load_json("data_sector_returns.json")
+            except FileNotFoundError:
+                self.use_sector_rotation = False
 
     def _load_stock_data(self):
         """加载选股所需数据。"""
@@ -731,6 +742,20 @@ class BacktestEngine:
                     except Exception:
                         pass
 
+            # 预演层: 脆弱点驱动的资产调整（季度，和达利欧同频）
+            if i % self.rebalance_freq == 0 and self.strategy == "aw_cycle_alpha_soros":
+                try:
+                    from polaris.simulator import simulate
+                    sim = simulate(self.fred, month)
+                    dalio_base_weights = _apply_vulnerability_overlay(
+                        dalio_base_weights, sim)
+                    # 行业轮动: 用simulator输出计算行业权重
+                    if self.use_sector_rotation:
+                        from axion.sector_backtest import compute_sector_weights
+                        self._sector_weights = compute_sector_weights(sim)
+                except Exception:
+                    pass
+
             # 索罗斯层: 月度再平衡
             weights = dict(dalio_base_weights)
             if self.strategy == "aw_cycle_alpha_soros":
@@ -780,13 +805,24 @@ class BacktestEngine:
 
             port_ret = 0.0
             for asset, w in current_weights.items():
-                if asset == "equity" and self.use_stock_selection:
-                    # 选股替代equity ETF，严格度随市场状态调整
+                if asset == "equity" and self.use_sector_rotation and self._sector_returns:
+                    # 行业轮动: equity权重按行业分配
+                    sector_rets = self._sector_returns.get(month, {})
+                    if self._sector_weights and sector_rets:
+                        eq_ret = sum(
+                            sw * sector_rets.get(sec, 0) / 100
+                            for sec, sw in self._sector_weights.items()
+                        )
+                    else:
+                        eq_ret = rets.get(asset, 0) / 100
+                    port_ret += w * eq_ret
+                elif asset == "equity" and self.use_stock_selection:
                     stock_ret = self._get_stock_portfolio_return(month, _force_score)
                     r = stock_ret if stock_ret is not None else rets.get(asset, 0)
+                    port_ret += w * r / 100
                 else:
                     r = rets.get(asset, 0)
-                port_ret += w * r / 100
+                    port_ret += w * r / 100
 
             # 杠杆成本
             rf_monthly = signals.get("treasury_3m", 2.0) / 12 / 100
@@ -968,6 +1004,70 @@ def format_results(results: list[BacktestResult], benchmarks: list[BacktestResul
 # ══════════════════════════════════════════════════════════════
 
 
+VULN_MAX_TILT = 0.06  # 脆弱点驱动的单资产最大调整幅度
+
+
+def _apply_vulnerability_overlay(base_weights: dict, sim) -> dict:
+    """根据 simulator 的脆弱点 + 货币政策冲突调整权重。
+
+    逻辑:
+    1. 脆弱点类型 → 减配什么
+    2. 货币政策最可能牺牲什么 → 对冲用什么
+    """
+    weights = dict(base_weights)
+
+    # ── 1. 脆弱点 → 减配 ──
+    for vuln in sim.vulnerabilities:
+        if vuln.severity < 0.3:
+            continue
+
+        loc = vuln.location.lower()
+        tilt = min(vuln.severity * VULN_MAX_TILT, VULN_MAX_TILT)
+
+        # 信贷/利率链脆弱 → 减配equity（金融敞口），加配避险
+        if any(k in loc for k in ["利率", "信贷", "贷款", "利差"]):
+            weights["equity"] = max(0, weights.get("equity", 0) - tilt)
+
+        # 供应链/运输脆弱 → 减配commodity（成本推升），减配equity（盈利受损）
+        elif any(k in loc for k in ["运输", "进口", "供应链", "油"]):
+            weights["commodity"] = max(0, weights.get("commodity", 0) - tilt * 0.5)
+            weights["equity"] = max(0, weights.get("equity", 0) - tilt * 0.5)
+
+    # ── 2. 货币政策牺牲什么 → 对冲用什么 ──
+    if sim.monetary_conflict and sim.monetary_conflict.severity > 0.2:
+        sacrifice = sim.monetary_conflict.most_likely_sacrifice
+        hedge_tilt = min(sim.monetary_conflict.severity * VULN_MAX_TILT, VULN_MAX_TILT)
+
+        if "CPI" in sacrifice or "印钱" in sacrifice:
+            # 牺牲CPI（印钱）→ 货币贬值 → 黄金涨, 名义债券跌
+            weights["gold"] = weights.get("gold", 0) + hedge_tilt
+            weights["long_term_bond"] = max(0, weights.get("long_term_bond", 0) - hedge_tilt * 0.5)
+
+        elif "就业" in sacrifice or "不救" in sacrifice:
+            # 牺牲就业（不救）→ 通缩 → 长债涨
+            weights["long_term_bond"] = weights.get("long_term_bond", 0) + hedge_tilt
+            weights["gold"] = max(0, weights.get("gold", 0) - hedge_tilt * 0.3)
+
+        else:
+            # 被卡住/犹豫 → 波动率飙升 → 降低整体敞口
+            scale = max(0.9, 1.0 - sim.monetary_conflict.severity * 0.1)
+            weights = {k: v * scale for k, v in weights.items()}
+
+    # ── 3. 玩家压力信号 → 额外降仓 ──
+    if sim.player_map and sim.player_map.stress_signals:
+        n_stress = len(sim.player_map.stress_signals)
+        if n_stress >= 2:
+            # 多个压力信号 → 全面降低风险敞口
+            scale = max(0.85, 1.0 - n_stress * 0.05)
+            weights = {k: v * scale for k, v in weights.items()}
+
+    # 归一化
+    total = sum(weights.values())
+    if total > 0:
+        weights = {k: v / total for k, v in weights.items()}
+    return weights
+
+
 def run_standard_backtest(mode: str = "pure", stock_selection: bool = False) -> str:
     """跑标准回测: S&P + 60/40 基准 + 4策略 x 多杠杆。
 
@@ -1006,6 +1106,22 @@ def run_standard_backtest(mode: str = "pure", stock_selection: bool = False) -> 
                 f"{r.sharpe:5.2f} {r.cumulative:+7.0f}% {r.max_drawdown:6.1f}% "
                 f"{r.worst_month:+6.1f}%{marker}"
             )
+
+    # 加跑行业轮动版本（全系统+行业轮动）
+    for lev in leverages:
+        engine = BacktestEngine(
+            strategy="aw_cycle_alpha_soros", leverage=lev, mode=mode,
+            use_sector_rotation=True,
+        )
+        r = engine.run()
+        all_results.append(r)
+        lev_label = f"全系统+行业轮动 {lev:.1f}x"
+        marker = " *" if r.sharpe > spy.sharpe else ""
+        print(
+            f"  {lev_label:42s} {r.ann_return:+6.1f}% {r.ann_vol:6.1f}% "
+            f"{r.sharpe:5.2f} {r.cumulative:+7.0f}% {r.max_drawdown:6.1f}% "
+            f"{r.worst_month:+6.1f}%{marker}"
+        )
 
     output = format_results(all_results, benchmarks)
     print(output)
