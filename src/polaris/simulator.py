@@ -852,45 +852,69 @@ def simulate(fred_history: dict, month: str, news_events: list | None = None) ->
 
 
 def _enrich_vulns_with_players(vulns: list[Vulnerability], player_map) -> None:
-    """用玩家地图丰富脆弱点——指出具体哪个玩家在承压。"""
+    """用玩家地图丰富脆弱点——指出谁先爆、为什么、爆了怎么传导。
+
+    不是列出所有承压玩家，而是找到最可能的引爆者和传导链。
+    """
     if not player_map:
         return
 
-    stressed_players = []
-    if player_map.banks.health != "healthy":
-        stressed_players.append(f"银行({player_map.banks.detail})")
-    if player_map.private_credit.health != "healthy":
-        stressed_players.append(f"私募信贷({player_map.private_credit.detail})")
-    if player_map.foreign_governments.health != "healthy":
-        stressed_players.append(f"外国政府({player_map.foreign_governments.detail})")
-    if player_map.retail.health != "healthy":
-        stressed_players.append(f"散户({player_map.retail.detail})")
-
-    if not stressed_players:
-        return
+    # 按承压严重度排序的玩家 (health: crisis > stressed > healthy)
+    _health_rank = {"crisis": 3, "stressed": 2, "healthy": 1}
+    player_list = [
+        ("私募信贷", player_map.private_credit),
+        ("银行", player_map.banks),
+        ("外国政府", player_map.foreign_governments),
+        ("散户", player_map.retail),
+    ]
 
     for vuln in vulns:
-        # 利率/信贷相关脆弱点 → 指出哪些玩家在承压
         loc = vuln.location.lower()
-        relevant = []
+
+        # ── 找引爆者: 在这个脆弱点的传导链上，谁最脆弱 ──
+
+        # 信贷/利率脆弱点 → 找信贷链上最弱的玩家
         if any(k in loc for k in ["利率", "信贷", "贷款", "利差"]):
-            if player_map.private_credit.health != "healthy":
-                relevant.append(f"私募信贷({player_map.private_credit.detail})")
-            if player_map.banks.health != "healthy":
-                relevant.append(f"银行({player_map.banks.detail})")
-        elif any(k in loc for k in ["运输", "进口", "供应链"]):
-            if player_map.foreign_governments.health != "healthy":
-                relevant.append(f"外国政府({player_map.foreign_governments.detail})")
-        elif any(k in loc for k in ["货币", "基金"]):
-            if player_map.retail.health != "healthy":
-                relevant.append(f"散户({player_map.retail.detail})")
+            # 信贷链上的玩家优先级: 私募信贷(最脆弱) > 银行 > 散户
+            chain_players = [
+                ("私募信贷", player_map.private_credit,
+                 "借了最多+质量最差(CCC级)+依赖银行续贷",
+                 "违约→银行商业贷款坏账→银行收紧→信贷进一步收缩"),
+                ("银行", player_map.banks,
+                 "商业贷款敞口+地产敞口",
+                 "惜贷→信贷收缩→企业+消费者都借不到钱"),
+                ("散户", player_map.retail,
+                 "保证金杠杆+消费贷",
+                 "违约→消费下降→企业盈利→股市"),
+            ]
+        # 供应链/运输脆弱点 → 外部秩序相关玩家
+        elif any(k in loc for k in ["运输", "进口", "供应链", "油价"]):
+            chain_players = [
+                ("外国政府", player_map.foreign_governments,
+                 "地缘冲突+贸易壁垒+资本回撤",
+                 "供应链断→生产成本↑→CPI↑→Fed被迫行动"),
+            ]
+        # 其他
+        else:
+            chain_players = [
+                (name, pg, "系统性承压", "传导到其他环节")
+                for name, pg in player_list
+            ]
 
-        if not relevant:
-            # 兜底: 列出所有承压玩家
-            relevant = stressed_players
+        # 在候选中找最脆弱的
+        detonator = None
+        for pname, pg, why, aftermath in chain_players:
+            if pg.health != "healthy":
+                detonator = (pname, pg, why, aftermath)
+                break
 
-        if relevant:
-            vuln.mechanism += f"\n     承压玩家: {'; '.join(relevant)}"
+        if detonator:
+            pname, pg, why, aftermath = detonator
+            vuln.mechanism += (
+                f"\n     引爆者: {pname} [{pg.health}] — {pg.detail}"
+                f"\n     为什么先爆: {why}"
+                f"\n     爆后传导: {aftermath}"
+            )
 
 
 # ━━ 8. 格式化输出 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
