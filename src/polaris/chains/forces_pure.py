@@ -87,10 +87,16 @@ FORCE3_INDICATORS = [
     ("epu_index", "政策不确定性", True),
 ]
 
-# 自然冲击: 通过食品/能源价格传导
+# 自然冲击 + 供应链: 通过食品/能源/物流价格传导
 FORCE4_INDICATORS = [
     # 经济常识: 食品价格飙升 = 供给冲击
     ("food_cpi_yoy", "食品价格", True),
+    # 经济常识: 货运量骤降 = 实体经济/供应链中断
+    ("cass_freight_yoy", "货运量变化", False),  # 下降=差
+    # 经济常识: 运输服务价格飙升 = 物流瓶颈/海运紧张
+    ("transport_cpi_yoy", "运输成本", True),
+    # 经济常识: 进口价格飙升 = 全球供应链成本上升
+    ("import_price_yoy", "进口价格", True),
 ]
 
 # 技术变革: 生产率是终极判据
@@ -164,6 +170,14 @@ def _build_derived_series(fred: dict) -> dict[str, dict[str, float]]:
     if "wti_oil" in fred:
         oil_yoy = _make_yoy(fred["wti_oil"])
         derived["oil_yoy_abs"] = {m: abs(v) for m, v in oil_yoy.items()}
+
+    # 供应链/海运指标
+    if "cass_freight" in fred:
+        derived["cass_freight_yoy"] = _make_yoy(fred["cass_freight"])
+    if "transport_cpi" in fred:
+        derived["transport_cpi_yoy"] = _make_yoy(fred["transport_cpi"])
+    if "import_price" in fred:
+        derived["import_price_yoy"] = _make_yoy(fred["import_price"])
 
     # 消费贷总量YoY
     if "consumer_credit_total" in fred:
