@@ -40,6 +40,22 @@ MACRO_TICKERS = {
 # 风险平价代理 ETF — market-update 时自动拉取行情
 RISK_PARITY_ETFS = ["SPY", "TLT", "IEF", "DBC", "GLD"]
 
+# GICS 行业 ETF — 资金流向检测 (Force 5: 钱流向哪个行业？)
+# 各 ETF vs SPY 的相对动量 → 自动识别当前热门行业
+GICS_SECTOR_ETFS = [
+    "XLK",   # 科技 (信息技术)
+    "XLV",   # 医疗保健
+    "XLF",   # 金融
+    "XLE",   # 能源
+    "XLI",   # 工业
+    "XLY",   # 可选消费
+    "XLP",   # 必选消费
+    "XLU",   # 公用事业
+    "XLB",   # 材料
+    "XLRE",  # 房地产
+    "XLC",   # 通信服务
+]
+
 
 # ── 个股数据 ─────────────────────────────────────────────────────────
 
@@ -254,6 +270,20 @@ FRED_SERIES: dict[str, str] = {
     "breakeven_inflation_10y": "T10YIE",   # 10 年期 breakeven 通胀率 (日度, %)
     "credit_spread_ig": "BAMLC0A0CM",      # 投资级信用利差 (日度, %)
     "credit_spread_hy": "BAMLH0A0HYM2",   # 高收益信用利差 (日度, %)
+    # ── 新增: 通用泡沫检测 (F1) ──
+    "corporate_profits": "A053RC1Q027SBEA",  # 税前企业利润 (季度, 十亿$)
+    "corporate_debt": "BCNSDODNS",           # 非金融企业债务 (季度, 十亿$)
+    # ── 新增: 贸易武器化 + 美元信仰 (F3) ──
+    "customs_duties": "B235RC1Q027SBEA",     # 关税收入 (季度, 十亿$)
+    "imports_goods": "A255RC1Q027SBEA",      # 商品进口额 (季度, 十亿$)
+    "export_monthly": "IEAMGSN",             # 月度商品出口额 (百万$)
+    "foreign_treasury_holdings": "FDHBFIN",  # 外国持有美国国债 (月度, 十亿$)
+    # ── 新增: 物理中断检测 (F4) ──
+    "rail_carloads": "RAILFRTCARLOADSD11",   # 周度铁路货运量 (千车)
+    # ── 新增: 结构性转型 (F5) ──
+    "info_sector_gdp_share": "VAPGDPI",      # 信息产业增加值/GDP (季度, %)
+    # ── 新增: 收益率曲线 (索罗斯) ──
+    "yield_curve_10y_3m": "T10Y3M",          # 10Y-3M利差 (日度, %)
 }
 
 
@@ -476,6 +506,11 @@ async def market_update(
         if not macro_only:
             # 风险平价代理 ETF（达利欧链波动率计算需要）
             for etf in RISK_PARITY_ETFS:
+                n = await update_stock_quotes(session, etf, days=days)
+                result["stocks"] += n
+
+            # GICS 行业 ETF（资金流向检测，Force 5 行业动量用）
+            for etf in GICS_SECTOR_ETFS:
                 n = await update_stock_quotes(session, etf, days=days)
                 result["stocks"] += n
 

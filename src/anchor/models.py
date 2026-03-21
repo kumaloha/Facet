@@ -1215,3 +1215,54 @@ class CausalLink(SQLModel, table=True):
 # 旧边表：  EntityRelationship, EdgeType enum
 # Axion 表：CanonicalPlayer, PlayerAlias, SupplyNode, LayerSchema
 #           (不再 re-export，Axion 直接管理)
+
+
+# ===========================================================================
+# 认知派生系统 — 可插拔的专家认知补丁
+# ===========================================================================
+
+
+class CognitionDerivative(SQLModel, table=True):
+    """认知派生 — 一套专家认知补丁的集合。
+
+    每个 derivative 是一个"认知视角"：
+    - pure 底座提供百分位+趋势+金融原理的客观评估
+    - derivative 在底座上叠加专家的主观认知规则
+    - 不同 derivative 可独立回测，比较认知优劣
+    """
+
+    __tablename__ = "cognition_derivatives"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True, unique=True)   # "dalio_v1", "soros_reflexivity", "user_ai_bubble"
+    author: str = ""                              # 来源
+    description: str = ""                         # 这套认知的核心理念
+    base_chain: str = "pure"                      # 基于哪个底座: "pure" (默认百分位+金融原理)
+    enabled: bool = True
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
+class CognitionPatch(SQLModel, table=True):
+    """认知补丁 — 一条具体的认知规则。
+
+    条件 (conditions_json): 百分位+趋势组合
+      格式: [{"indicator": "lending_standards", "percentile_op": ">", "percentile_val": 60, "trend": "deteriorating"}, ...]
+      所有条件必须同时满足 (AND 逻辑)
+
+    动作 (action_json): 对 force 方向的调整
+      格式: {"force_id": 1, "direction_adjustment": -0.3, "contradiction": "银行收紧但利差窄"}
+    """
+
+    __tablename__ = "cognition_patches"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    derivative_id: int = Field(foreign_key="cognition_derivatives.id", index=True)
+    name: str                                     # "影子银行背离"
+    description: str = ""                         # 规则说明
+
+    conditions_json: str = "[]"                   # 条件 (JSON)
+    action_json: str = "{}"                       # 动作 (JSON)
+
+    enabled: bool = True
+    created_at: datetime = Field(default_factory=_utcnow)

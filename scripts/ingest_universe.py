@@ -58,21 +58,10 @@ async def batch_ingest(companies: list[dict], concurrency: int = 3):
 
     await create_tables()
 
-    # 找出已完成 LLM 提取的（用 operational_issues 作为标志 — 纯 LLM 表）
-    async with AsyncSessionLocal() as session:
-        from anchor.models import OperationalIssue
-        result = await session.execute(
-            select(CompanyProfile.ticker)
-            .where(CompanyProfile.id.in_(
-                select(OperationalIssue.company_id).distinct()
-            ))
-        )
-        llm_done = {r[0] for r in result.all()}
-
-    todo = [c for c in companies if c["ticker"] not in llm_done]
+    # 全量重跑（不跳过任何公司）
+    todo = companies
     logger.info(
-        f"[Universe] 共 {len(companies)} 家，LLM 已完成 {len(llm_done)}，"
-        f"待 LLM {len(todo)}，并发 {concurrency}"
+        f"[Universe] 共 {len(companies)} 家，全量重跑，并发 {concurrency}"
     )
 
     if not todo:

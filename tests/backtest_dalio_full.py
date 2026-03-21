@@ -1,6 +1,10 @@
 """
-达利欧全流程月度回测
-====================
+[LEGACY] 达利欧全流程月度回测
+==============================
+
+!! 此文件已迁移到 src/axion/backtest.py !!
+!! 新代码请使用: from axion.backtest import BacktestEngine, run_standard_backtest !!
+!! 此文件保留作为参考，不再维护。 !!
 
 完整链路:
   FRED 历史数据 → 五大力量 → 主要矛盾 → 场景推演 → 信号分流
@@ -524,6 +528,7 @@ def backtest_dalio_full(
     strategy: str = "aw_only",
     leverage: float = 1.0,
     rebalance_freq: int = 3,  # 季度再平衡
+    mode: str = "full",  # "full" = 现有逻辑, "pure" = 百分位+趋势+金融原理
 ) -> dict:
     """达利欧全流程月度回测。
 
@@ -532,6 +537,10 @@ def backtest_dalio_full(
       "aw_cycle"           — All Weather + 大周期倾斜
       "aw_cycle_alpha"     — All Weather + 大周期 + Pure Alpha
       "aw_cycle_alpha_soros" — 全部: AW + 大周期 + PA + 索罗斯
+
+    mode:
+      "full" — 现有逻辑（含所有后验补丁和硬编码阈值）
+      "pure" — 只用百分位+趋势+金融原理/经济常识/历史规律
     """
     fred = load_fred_history()
     months = sorted(MONTHLY_RETURNS.keys())
@@ -568,33 +577,87 @@ def backtest_dalio_full(
             elif strategy in ("aw_cycle_alpha", "aw_cycle_alpha_soros"):
                 dalio_base_weights = apply_big_cycle_tilts(base_aw, all_data)
                 try:
-                    view = build_five_forces_view(
-                        macro_data=macro_d, internal_data=internal_d,
-                        external_data=external_d, nature_data=nature_d,
-                        tech_data=tech_d,
-                    )
-                    macro_ctx = MacroContext(
-                        fed_funds_rate=macro_d.get("fed_funds_rate"),
-                        credit_growth=macro_d.get("credit_growth"),
-                        cpi_actual=macro_d.get("cpi_actual"),
-                        gdp_growth_actual=macro_d.get("gdp_growth_actual"),
-                        unemployment_rate=macro_d.get("unemployment_rate"),
-                        total_debt_to_gdp=macro_d.get("total_debt_to_gdp"),
-                        financial_sector_leverage=macro_d.get("financial_leverage"),
-                        fiscal_deficit_to_gdp=internal_d.get("fiscal_deficit_to_gdp"),
-                    )
-                    graph = _propagate_causal_graph(macro_ctx)
-                    dalio_base_weights = apply_pure_alpha(
-                        dalio_base_weights, view, graph.nodes, all_data)
+                    if mode == "pure":
+                        # Pure 模式: 百分位+趋势评估，无硬编码阈值
+                        from polaris.chains.forces_pure import assess_forces_pure
+                        from anchor.compute.percentile_trend import ForceDirection as PTForceDirection
+                        pure_results = assess_forces_pure(fred, month)
+                        dir_map_pure = {
+                            PTForceDirection.STRONGLY_POSITIVE: 1.0,
+                            PTForceDirection.POSITIVE: 0.5,
+                            PTForceDirection.NEUTRAL: 0.0,
+                            PTForceDirection.NEGATIVE: -0.5,
+                            PTForceDirection.STRONGLY_NEGATIVE: -1.0,
+                        }
+                        force_dirs = {}
+                        for fkey, (direction, conf, _) in pure_results.items():
+                            fid = {"force1": 1, "force2": 2, "force3": 3, "force4": 4, "force5": 5}.get(fkey)
+                            if fid:
+                                force_dirs[fid] = dir_map_pure.get(direction, 0.0)
 
-                    dir_map = {
-                        ForceDirection.STRONGLY_POSITIVE: 1.0,
-                        ForceDirection.POSITIVE: 0.5,
-                        ForceDirection.NEUTRAL: 0.0,
-                        ForceDirection.NEGATIVE: -0.5,
-                        ForceDirection.STRONGLY_NEGATIVE: -1.0,
-                    }
-                    force_dirs = {f.force_id: dir_map[f.effective_direction] for f in view.forces}
+                        # Pure 模式仍用因果引擎做资产评分（保留金融原理的传导关系）
+                        macro_ctx = MacroContext(
+                            fed_funds_rate=macro_d.get("fed_funds_rate"),
+                            credit_growth=macro_d.get("credit_growth"),
+                            cpi_actual=macro_d.get("cpi_actual"),
+                            gdp_growth_actual=macro_d.get("gdp_growth_actual"),
+                            unemployment_rate=macro_d.get("unemployment_rate"),
+                            total_debt_to_gdp=macro_d.get("total_debt_to_gdp"),
+                            financial_sector_leverage=macro_d.get("financial_leverage"),
+                            fiscal_deficit_to_gdp=internal_d.get("fiscal_deficit_to_gdp"),
+                        )
+                        graph = _propagate_causal_graph(macro_ctx)
+
+                        # 用 pure force directions 构建 view 用于 PA
+                        view = build_five_forces_view(
+                            macro_data=macro_d, internal_data=internal_d,
+                            external_data=external_d, nature_data=nature_d,
+                            tech_data=tech_d,
+                        )
+                        # 覆盖 force directions 为 pure 版本
+                        from polaris.chains.dalio_forces import ForceDirection as PFD
+                        _pure_dir_map = {
+                            1.0: PFD.STRONGLY_POSITIVE,
+                            0.5: PFD.POSITIVE,
+                            0.0: PFD.NEUTRAL,
+                            -0.5: PFD.NEGATIVE,
+                            -1.0: PFD.STRONGLY_NEGATIVE,
+                        }
+                        for f in view.forces:
+                            pd_score = force_dirs.get(f.force_id, 0.0)
+                            f.system_direction = _pure_dir_map.get(pd_score, PFD.NEUTRAL)
+
+                        dalio_base_weights = apply_pure_alpha(
+                            dalio_base_weights, view, graph.nodes, all_data)
+                    else:
+                        # Full 模式: 现有逻辑
+                        view = build_five_forces_view(
+                            macro_data=macro_d, internal_data=internal_d,
+                            external_data=external_d, nature_data=nature_d,
+                            tech_data=tech_d,
+                        )
+                        macro_ctx = MacroContext(
+                            fed_funds_rate=macro_d.get("fed_funds_rate"),
+                            credit_growth=macro_d.get("credit_growth"),
+                            cpi_actual=macro_d.get("cpi_actual"),
+                            gdp_growth_actual=macro_d.get("gdp_growth_actual"),
+                            unemployment_rate=macro_d.get("unemployment_rate"),
+                            total_debt_to_gdp=macro_d.get("total_debt_to_gdp"),
+                            financial_sector_leverage=macro_d.get("financial_leverage"),
+                            fiscal_deficit_to_gdp=internal_d.get("fiscal_deficit_to_gdp"),
+                        )
+                        graph = _propagate_causal_graph(macro_ctx)
+                        dalio_base_weights = apply_pure_alpha(
+                            dalio_base_weights, view, graph.nodes, all_data)
+
+                        dir_map = {
+                            ForceDirection.STRONGLY_POSITIVE: 1.0,
+                            ForceDirection.POSITIVE: 0.5,
+                            ForceDirection.NEUTRAL: 0.0,
+                            ForceDirection.NEGATIVE: -0.5,
+                            ForceDirection.STRONGLY_NEGATIVE: -1.0,
+                        }
+                        force_dirs = {f.force_id: dir_map[f.effective_direction] for f in view.forces}
                 except Exception:
                     pass
 
@@ -786,5 +849,45 @@ def main():
         print(f"  {year} {yr(aw['equity_curve']):+7.1f}% {yr(alpha['equity_curve']):+10.1f}% {yr(soros['equity_curve']):+9.1f}% {yr(spy['equity_curve']):+7.1f}%")
 
 
+def main_pure():
+    """Pure 模式回测: 只用百分位+趋势+金融原理。"""
+    print("=" * 90)
+    print("  Pure 模式回测 (百分位+趋势, 无后验补丁)")
+    print("=" * 90)
+
+    spy = _backtest_simple({"equity": 1.0}, 12)
+    b6040 = _backtest_simple({"equity": 0.60, "long_term_bond": 0.20, "intermediate_bond": 0.20}, 3)
+
+    strategies = [
+        ("纯 All Weather", "aw_only"),
+        ("AW + 大周期倾斜", "aw_cycle"),
+        ("AW + 大周期 + PA [PURE]", "aw_cycle_alpha"),
+        ("AW + 大周期 + PA + 索罗斯 [PURE]", "aw_cycle_alpha_soros"),
+    ]
+
+    print(f"\n  {'策略':36s} {'年化':>7s} {'波动率':>7s} {'夏普':>6s} {'累计':>8s} {'回撤':>7s} {'最差月':>7s}")
+    print(f"  {'-' * 85}")
+    print(f"  {'S&P 500':36s} {spy['ann_return']:+6.1f}% {spy['ann_vol']:6.1f}% {spy['sharpe']:5.2f} {spy['cumulative']:+7.0f}% {spy['max_drawdown']:6.1f}% {spy['worst_month']:+6.1f}%")
+    print(f"  {'60/40':36s} {b6040['ann_return']:+6.1f}% {b6040['ann_vol']:6.1f}% {b6040['sharpe']:5.2f} {b6040['cumulative']:+7.0f}% {b6040['max_drawdown']:6.1f}% {b6040['worst_month']:+6.1f}%")
+    print(f"  {'-' * 85}")
+
+    leverages = [1.0, 1.5, 2.0, 2.5]
+    for label, strat in strategies:
+        mode = "pure" if "[PURE]" in label else "full"
+        for lev in leverages:
+            r = backtest_dalio_full(strat, leverage=lev, rebalance_freq=3, mode=mode)
+            lev_label = f"{label} {lev:.1f}x"
+            marker = " ★" if r["sharpe"] > spy["sharpe"] else ""
+            print(f"  {lev_label:36s} {r['ann_return']:+6.1f}% {r['ann_vol']:6.1f}% {r['sharpe']:5.2f} {r['cumulative']:+7.0f}% {r['max_drawdown']:6.1f}% {r['worst_month']:+6.1f}%{marker}")
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+    if "--pure" in sys.argv:
+        main_pure()
+    elif "--both" in sys.argv:
+        main()
+        print("\n\n")
+        main_pure()
+    else:
+        main()

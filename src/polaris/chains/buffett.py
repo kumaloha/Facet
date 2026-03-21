@@ -91,6 +91,76 @@ class RiskAssessment:
 
 
 @dataclass
+class ScreeningProfile:
+    """选股筛选配置 — 由达利欧市场状态决定哪些步骤必选/可选/跳过。
+
+    每个步骤: "required" = 必须通过, "optional" = 有加分没有不扣, "skip" = 跳过
+    """
+    name: str = "conservative"
+    moat: str = "required"             # 护城河
+    earnings_power: str = "required"   # 盈余能力
+    profit_distribution: str = "required"  # 利润分配
+    predictability: str = "required"   # 可预测
+    valuation: str = "required"        # 可估值
+    margin_of_safety: str = "required" # 安全边际
+    min_margin_of_safety: float = 0.25 # 安全边际最低要求
+
+    @classmethod
+    def conservative(cls) -> "ScreeningProfile":
+        """保守模式: 市场负面时，全部必选，高安全边际。"""
+        return cls(
+            name="conservative",
+            moat="required",
+            earnings_power="required",
+            profit_distribution="required",
+            predictability="required",
+            valuation="required",
+            margin_of_safety="required",
+            min_margin_of_safety=0.30,
+        )
+
+    @classmethod
+    def neutral(cls) -> "ScreeningProfile":
+        """中性模式: 核心必选，护城河可选，安全边际中等。"""
+        return cls(
+            name="neutral",
+            moat="optional",
+            earnings_power="required",
+            profit_distribution="required",
+            predictability="optional",
+            valuation="required",
+            margin_of_safety="required",
+            min_margin_of_safety=0.20,
+        )
+
+    @classmethod
+    def aggressive(cls) -> "ScreeningProfile":
+        """激进模式: 市场正面时，跳过护城河和可预测，低安全边际。"""
+        return cls(
+            name="aggressive",
+            moat="skip",
+            earnings_power="required",
+            profit_distribution="required",
+            predictability="skip",
+            valuation="required",
+            margin_of_safety="required",
+            min_margin_of_safety=0.10,
+        )
+
+    @classmethod
+    def from_force_direction(cls, direction_score: float) -> "ScreeningProfile":
+        """从达利欧Force方向自动选择profile。
+
+        direction_score: -1(强烈负面) 到 +1(强烈正面)
+        """
+        if direction_score <= -0.5:
+            return cls.conservative()
+        elif direction_score >= 0.5:
+            return cls.aggressive()
+        return cls.neutral()
+
+
+@dataclass
 class BuffettResult:
     # 线 1
     line1_links: list[ChainLink] = field(default_factory=list)
@@ -101,6 +171,9 @@ class BuffettResult:
     integrity: IntegrityResult | None = None
     management: ManagementCharacter | None = None
     risk: RiskAssessment | None = None
+
+    # 配置
+    screening_profile: str = "conservative"
 
     # 综合
     conclusion: str = ""
@@ -593,49 +666,63 @@ def _assess_risk(ctx: ComputeContext) -> RiskAssessment:
 def evaluate(
     ctx: ComputeContext,
     market_context: dict | None = None,
+    profile: ScreeningProfile | None = None,
 ) -> BuffettResult:
-    result = BuffettResult()
+    if profile is None:
+        profile = ScreeningProfile.conservative()
 
-    # ── 线 1: 生意评估 ──
-    # 1. 护城河
-    moat_link, moat_result = _link_moat(ctx)
-    result.moat = moat_result
-    result.line1_links.append(moat_link)
+    result = BuffettResult(screening_profile=profile.name)
 
-    if moat_link.verdict == Verdict.BREAKS:
-        result.line1_broken_at = "护城河"
-    else:
-        # 2. 盈余能力
-        earnings = _link_earnings_power(ctx)
-        result.line1_links.append(earnings)
-        if earnings.verdict == Verdict.BREAKS:
-            result.line1_broken_at = "盈余能力"
+    # ── 线 1: 生意评估（步骤可配置）──
+
+    # 定义步骤管道
+    steps = [
+        ("moat", "护城河", profile.moat, lambda: _link_moat(ctx)),
+        ("earnings_power", "盈余能力", profile.earnings_power, lambda: (_link_earnings_power(ctx), None)),
+        ("profit_distribution", "利润分配", profile.profit_distribution, lambda: (_link_profit_distribution(ctx), None)),
+        ("predictability", "可预测", profile.predictability, lambda: (_link_predictability(ctx), None)),
+        ("valuation", "可估值", profile.valuation, lambda: (_link_valuation(ctx, market_context), None)),
+    ]
+
+    val_link = None  # 估值结果，安全边际需要引用
+
+    for step_key, step_name, mode, run_fn in steps:
+        if mode == "skip":
+            # 跳过: 添加一个标记但不断链
+            result.line1_links.append(ChainLink(
+                name=step_name, principle=f"跳过（{profile.name}模式）",
+                verdict=Verdict.HOLDS, detail=f"当前模式不要求{step_name}",
+            ))
+            continue
+
+        # 执行评估
+        link_result = run_fn()
+        if step_key == "moat":
+            link, moat_result = link_result
+            result.moat = moat_result
         else:
-            # 3. 利润分配
-            dist = _link_profit_distribution(ctx)
-            result.line1_links.append(dist)
-            if dist.verdict == Verdict.BREAKS:
-                result.line1_broken_at = "利润分配"
-            else:
-                # 4. 可预测
-                pred = _link_predictability(ctx)
-                result.line1_links.append(pred)
-                if pred.verdict == Verdict.BREAKS:
-                    result.line1_broken_at = "可预测"
-                else:
-                    # 5. 可估值
-                    val = _link_valuation(ctx, market_context)
-                    result.line1_links.append(val)
-                    if val.verdict == Verdict.BREAKS:
-                        result.line1_broken_at = "可估值"
-                    else:
-                        # 6. 安全边际
-                        mos = _link_margin_of_safety(ctx, market_context, val)
-                        result.line1_links.append(mos)
-                        if mos.verdict == Verdict.BREAKS:
-                            result.line1_broken_at = "安全边际"
+            link, _ = link_result
+            if step_key == "valuation":
+                val_link = link
 
-    # ── 线 2: 人和环境（全部跑完）──
+        result.line1_links.append(link)
+
+        if link.verdict == Verdict.BREAKS:
+            if mode == "required":
+                # 必选步骤断裂→链断裂
+                result.line1_broken_at = step_name
+                break
+            # optional模式: 断裂不断链，只记录
+            link.detail = f"{link.detail}（{step_name}未通过但当前模式为可选）"
+
+    # 安全边际（单独处理，因为需要引用估值结果）
+    if result.line1_broken_at is None and profile.margin_of_safety != "skip":
+        mos = _link_margin_of_safety(ctx, market_context, val_link)
+        result.line1_links.append(mos)
+        if mos.verdict == Verdict.BREAKS and profile.margin_of_safety == "required":
+            result.line1_broken_at = "安全边际"
+
+    # ── 线 2: 人和环境（全部跑完，不受profile影响）──
     result.integrity = _check_integrity(ctx)
     result.management = _assess_management_character(ctx)
     result.risk = _assess_risk(ctx)
@@ -646,13 +733,13 @@ def evaluate(
     risk_ok = not result.risk.catastrophic
 
     if line1_ok and integrity_ok and risk_ok:
-        result.conclusion = "生意好 + 人可信 + 风险可控 → 可以投资"
+        result.conclusion = f"[{profile.name}] 生意好 + 人可信 + 风险可控 → 可以投资"
     elif line1_ok and not risk_ok:
         result.conclusion = f"好生意但有灾难性风险 → 不能买（{result.risk.detail}）"
     elif line1_ok and not integrity_ok:
         result.conclusion = f"好生意但诚信存疑 → 数据不可信（{result.integrity.detail}）"
     elif result.line1_broken_at:
-        result.conclusion = f"生意链断裂于「{result.line1_broken_at}」"
+        result.conclusion = f"生意链断裂于「{result.line1_broken_at}」（{profile.name}模式）"
     else:
         result.conclusion = "评估不完整"
 

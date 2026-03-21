@@ -263,6 +263,25 @@ def assess_force1_debt_cycle(macro_data: dict) -> ForceAssessment:
                 f.system_highlights.append(
                     f"⚠ SOFR利差+{sofr_spread:.2f}% — 回购市场紧张, 影子银行融资成本上升")
 
+    # ── 企业偿付能力 (通用泡沫检测: 利润/债务比下降 = 明斯基时刻积累) ──
+    corp_profits = d.get("corporate_profits")
+    corp_debt = d.get("corporate_debt")
+    if corp_profits is not None and corp_debt is not None and corp_debt > 0:
+        solvency_ratio = corp_profits / corp_debt * 100  # 利润/债务 %
+        f.indicators.append(Indicator(
+            name="企业利润/债务比", value=round(solvency_ratio, 1), unit="%",
+            context="下降=企业靠借新还旧维持, <10%=偿付压力大. "
+                    "配合贷款标准看: 偿付弱+银行收紧=崩盘条件"))
+        if solvency_ratio < 10:
+            red_flags.append(f"企业利润/债务仅{solvency_ratio:.0f}%(偿付压力)")
+            f.system_highlights.append(
+                f"⚠ 企业利润/债务比{solvency_ratio:.0f}% — 大量企业依赖续贷维持")
+        # 最危险组合: 偿付弱 + 银行收紧
+        if solvency_ratio < 12 and lending_std is not None and lending_std > 15:
+            f.system_contradictions.append(
+                f"企业偿付弱(利润/债务{solvency_ratio:.0f}%)但银行在收紧贷款({lending_std:.0f}%) — "
+                "信贷驱动的投资(AI基建/能源/地产)面临再融资断裂风险")
+
     return f
 
 
@@ -424,12 +443,18 @@ def assess_force3_external_order(data: dict | None = None) -> ForceAssessment:
             name="军费/GDP", value=military_gdp, unit="%",
             context="美国~3.5%, 中国~1.7%. 上升=安全环境恶化"))
 
-    # 关税率变化
-    tariff_rate = d.get("avg_tariff_rate")
+    # 关税率: 从关税收入/进口额计算有效税率
+    tariff_rate = d.get("avg_tariff_rate")  # 手动输入优先
+    if tariff_rate is None:
+        customs = d.get("customs_duties")
+        imports = d.get("imports_goods")
+        if customs is not None and imports is not None and imports > 0:
+            tariff_rate = customs / imports * 100
     if tariff_rate is not None:
         f.indicators.append(Indicator(
-            name="平均关税率", value=tariff_rate, unit="%",
-            context="2019前~1.5%, 贸易战后~3%+, Trump 2.0→更高"))
+            name="有效关税率", value=round(tariff_rate, 1), unit="%",
+            context="2019前~2.6%, 贸易战后~3%+, Trump 2.0→~13%. "
+                    "关税收入÷进口额"))
 
     # 外汇储备变化（下降=资本外流/地缘压力）
     fx_reserve_change = d.get("fx_reserve_change_pct")
@@ -491,6 +516,28 @@ def assess_force3_external_order(data: dict | None = None) -> ForceAssessment:
         f.indicators.append(Indicator(
             name="商品贸易差额", value=trade_bal, unit="十亿$",
             context="持续恶化=竞争力下降或内需过旺"))
+
+    # 外国持有美国国债（美元霸权信仰的直接度量）
+    foreign_holdings = d.get("foreign_treasury_holdings")
+    if foreign_holdings is not None:
+        f.indicators.append(Indicator(
+            name="外国持有美国国债", value=foreign_holdings, unit="十亿$",
+            context="持续下降=去美元化信号. 配合美元指数看: "
+                    "抛售+美元弱=信仰崩塌, 抛售+美元强=只是调仓"))
+
+    # 贸易战咬合度检测: 关税↑ 同时 出口↓ = 不只是喊话，在真咬
+    if tariff_rate is not None and tariff_rate > 3:
+        if export_growth is not None and export_growth < 0:
+            f.system_contradictions.append(
+                f"贸易战正在咬合: 有效关税率{tariff_rate:.1f}% + 出口同比{export_growth:+.1f}% — "
+                "贸易壁垒已产生实质影响，不只是政治姿态")
+            signals.append(f"贸易战在咬(关税{tariff_rate:.0f}%+出口{export_growth:+.0f}%)")
+
+    # 去美元化交叉验证
+    if foreign_holdings is not None and dollar_yoy is not None:
+        # 简化: 如果YoY能拿到更好，这里只做方向性判断
+        if dollar_yoy < -5:
+            signals.append(f"美元走弱({dollar_yoy:+.0f}%)——关注外国是否在减持美债")
 
     # 重新判断
     if len(signals) >= 2:
@@ -646,6 +693,14 @@ def assess_force4_nature(data: dict | None = None, live_snapshot: dict | None = 
         elif food_inflation > 10:
             signals_negative.append(f"食品通胀{food_inflation}%")
 
+    # 铁路货运量（周度物理活动信号——突然下跌 = 供应链/灾害中断）
+    rail = d.get("rail_carloads")
+    if rail is not None:
+        f.indicators.append(Indicator(
+            name="铁路货运量", value=rail, unit="千车/周",
+            context="周度实物活动信号. 突然下跌>15% = 供应链中断/自然灾害. "
+                    "FRED RAILFRTCARLOADSD11"))
+
     energy_disruption = d.get("energy_supply_disruption")
     if energy_disruption is not None:
         f.indicators.append(Indicator(
@@ -727,11 +782,19 @@ def assess_force5_technology(data: dict | None = None) -> ForceAssessment:
             name="R&D支出增速", value=data["rd_spending_growth"], unit="%",
             context="企业研发投入反映对未来技术的信心"))
 
-    # 新行业占 GDP 比重
+    # 新行业占 GDP 比重 (通用字段，手动输入)
     if data and "new_sector_gdp_share" in data:
         f.indicators.append(Indicator(
             name="新兴行业/GDP", value=data["new_sector_gdp_share"], unit="%",
             context="上升=结构性转型正在发生"))
+
+    # 信息产业 GDP 占比 (FRED VAPGDPI, 结构转型的直接度量)
+    info_share = (data or {}).get("info_sector_gdp_share")
+    if info_share is not None:
+        f.indicators.append(Indicator(
+            name="信息产业/GDP", value=info_share, unit="%",
+            context="持续上升=数字化转型真实发生. "
+                    "配合生产率看: 占比↑+生产率↑=真革命, 占比↑+生产率平=泡沫"))
 
     # NASDAQ 同比（科技板块代理）
     if data and "nasdaq_yoy" in data:
@@ -780,6 +843,23 @@ def assess_force5_technology(data: dict | None = None) -> ForceAssessment:
     if prod is not None and prod > 2.0 and (data or {}).get("gdp_growth_actual", 0) < 1:
         f.system_contradictions.append(
             "生产率在上升但 GDP 增速低——可能是技术对就业的替代效应，或者采用还在早期")
+
+    # 泡沫 vs 革命: 价格涨了但生产率没跟上 = 泡沫信号
+    if nasdaq is not None and nasdaq > 30 and (prod is None or prod < 2.0):
+        f.system_contradictions.append(
+            f"NASDAQ同比+{nasdaq:.0f}%但生产率{'数据缺失' if prod is None else f'{prod:.1f}%'} — "
+            "价格大幅领先基本面，泡沫风险上升")
+
+    # 信息产业占比 + 生产率交叉
+    if info_share is not None and prod is not None:
+        if info_share > 7 and prod > 2.0:
+            f.system_highlights.append(
+                f"信息产业占GDP {info_share:.1f}% + 生产率{prod:.1f}% — 结构性转型可能正在发生")
+        elif info_share > 7 and prod < 1.5:
+            f.system_contradictions.append(
+                f"信息产业占GDP {info_share:.1f}%但全经济生产率仅{prod:.1f}% — "
+                "技术投入大但尚未转化为广泛的生产率提升")
+
     return f
 
 
@@ -900,7 +980,7 @@ async def live_five_forces(fred_api_key: str | None = None) -> FiveForcesView:
     3. 合并构建五大力量视图
     """
     import asyncio
-    from anchor.collect.fred_forces import fetch_and_build_forces_data
+    from anchor.collect.forces_data import fetch_and_build_forces_data
     from anchor.collect.nature import fetch_force4_snapshot
 
     # FRED 是同步的（fredapi 库），放到线程里

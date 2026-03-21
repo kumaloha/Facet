@@ -1,0 +1,241 @@
+# 认知派生: legacy_v1
+# ====================
+# 原始后验补丁集合 — 基于 2007-2024 历史经验
+# 从 dalio_forces.py 的硬编码阈值转换为百分位+趋势条件
+#
+# 与旧代码的区别:
+#   旧: if mortgage_delinquency > 4: red_flag (硬编码数字)
+#   新: if mortgage_delinquency P>70 + deteriorating (历史位置+方向)
+#
+# 百分位阈值是基于 FRED 历史分布估算:
+#   - 房贷逾期率 4% ≈ 历史 70th 百分位 (多数时间低于此)
+#   - 贷款标准 20% ≈ 历史 60th 百分位 (经常在 0-10 震荡)
+#   - 基尼系数 40 ≈ 历史 50th 百分位 (美国长期在 38-42 区间)
+
+name: legacy_v1
+author: system
+description: "原始后验补丁集合 — 基于2007-2024历史经验。将dalio_forces.py的硬编码阈值转为百分位条件。"
+
+patches:
+  # ── Force 1: 债务/信贷周期 ──
+
+  - name: "影子银行背离"
+    description: "银行收紧贷款但高收益利差偏窄 = 影子银行在补位，隐性杠杆堆积 (2006-2007经典模式)"
+    conditions:
+      - indicator: lending_standards
+        percentile_op: ">"
+        percentile_val: 60
+      - indicator: credit_spread_hy
+        percentile_op: "<"
+        percentile_val: 40
+    action:
+      force_id: 1
+      direction_adjustment: -0.3
+      contradiction: "银行收紧但高收益利差窄=影子银行在补位，隐性杠杆在堆积"
+
+  - name: "结构性信贷恶化"
+    description: "房贷逾期率历史高位 + 趋势恶化 = 信贷质量崩坏"
+    conditions:
+      - indicator: mortgage_delinquency
+        percentile_op: ">"
+        percentile_val: 70
+        trend: deteriorating
+    action:
+      force_id: 1
+      direction_adjustment: -0.3
+      contradiction: "房贷逾期率高且在恶化"
+
+  - name: "极端信贷恶化"
+    description: "房贷逾期率极端高位 + 加速恶化 = 信贷危机"
+    conditions:
+      - indicator: mortgage_delinquency
+        percentile_op: ">"
+        percentile_val: 85
+        trend: accelerating_deterioration
+    action:
+      force_id: 1
+      direction_adjustment: -0.5
+      contradiction: "房贷逾期率极端且加速恶化——信贷危机信号"
+
+  - name: "银行贷款大幅收紧"
+    description: "贷款标准大幅收紧 = 信贷即将收缩 (最前瞻指标)"
+    conditions:
+      - indicator: lending_standards
+        percentile_op: ">"
+        percentile_val: 70
+        trend: deteriorating
+    action:
+      force_id: 1
+      direction_adjustment: -0.2
+      contradiction: "银行大幅收紧贷款——信贷收缩的前兆"
+
+  - name: "家庭偿付压力"
+    description: "家庭债务高 + 偿付比高 = 消费被挤压"
+    conditions:
+      - indicator: household_debt_gdp
+        percentile_op: ">"
+        percentile_val: 70
+      - indicator: mortgage_debt_service
+        percentile_op: ">"
+        percentile_val: 70
+    action:
+      force_id: 1
+      direction_adjustment: -0.2
+      contradiction: "家庭债务高+偿付负担重=消费脆弱"
+
+  - name: "金融杠杆过高"
+    description: "金融杠杆远超均值 = 系统脆弱"
+    conditions:
+      - indicator: financial_leverage
+        percentile_op: ">"
+        percentile_val: 75
+    action:
+      force_id: 1
+      direction_adjustment: -0.2
+      contradiction: "金融杠杆过高——系统面临突然去杠杆风险"
+
+  - name: "信贷严重收缩"
+    description: "信贷增速历史低位 = 经济面临紧缩"
+    conditions:
+      - indicator: credit_growth
+        percentile_op: "<"
+        percentile_val: 20
+        trend: deteriorating
+    action:
+      force_id: 1
+      direction_adjustment: -0.3
+      contradiction: "信贷在收缩——历史上常伴随衰退"
+
+  - name: "高通胀压力"
+    description: "CPI历史高位 + 恶化 = 央行被迫紧缩"
+    conditions:
+      - indicator: cpi_yoy
+        percentile_op: ">"
+        percentile_val: 80
+        trend: deteriorating
+    action:
+      force_id: 1
+      direction_adjustment: -0.2
+      contradiction: "通胀高企且在恶化——央行将被迫紧缩"
+
+  # ── Force 2: 内部秩序 ──
+
+  - name: "消费者极度悲观"
+    description: "消费者信心历史低位 = 消费意愿崩塌"
+    conditions:
+      - indicator: consumer_sentiment
+        percentile_op: "<"
+        percentile_val: 20
+    action:
+      force_id: 2
+      direction_adjustment: -0.3
+      contradiction: "消费者极度悲观——消费可能大幅收缩"
+
+  - name: "贫富分化加剧"
+    description: "基尼系数高位 + 恶化 = 政策不可预测性上升"
+    conditions:
+      - indicator: gini
+        percentile_op: ">"
+        percentile_val: 60
+        trend: deteriorating
+    action:
+      force_id: 2
+      direction_adjustment: -0.2
+      contradiction: "贫富分化加剧——可能触发民粹主义和激进政策"
+
+  - name: "财政赤字极端"
+    description: "财政赤字/GDP极高 = 财政空间耗尽或大规模再分配"
+    conditions:
+      - indicator: fiscal_deficit_gdp
+        percentile_op: ">"
+        percentile_val: 80
+    action:
+      force_id: 2
+      direction_adjustment: -0.2
+      contradiction: "财政赤字极高——要么大规模再分配要么债务不可持续"
+
+  # ── Force 3: 外部秩序 ──
+
+  - name: "贸易逆差恶化"
+    description: "贸易逆差历史高位 + 恶化 = 竞争力下降或贸易壁垒上升"
+    conditions:
+      - indicator: trade_balance_abs
+        percentile_op: ">"
+        percentile_val: 70
+        trend: deteriorating
+    action:
+      force_id: 3
+      direction_adjustment: -0.2
+      contradiction: "贸易逆差在恶化——可能反映贸易壁垒或竞争力问题"
+
+  - name: "政策高度不确定"
+    description: "EPU极高 = 投资决策冻结"
+    conditions:
+      - indicator: epu_index
+        percentile_op: ">"
+        percentile_val: 80
+    action:
+      force_id: 3
+      direction_adjustment: -0.3
+      contradiction: "政策不确定性极高——投资决策可能冻结"
+
+  - name: "美元剧烈波动"
+    description: "美元年化变动幅度极大 = 全球资本流动不稳定"
+    conditions:
+      - indicator: dollar_yoy
+        percentile_op: ">"
+        percentile_val: 80
+    action:
+      force_id: 3
+      direction_adjustment: -0.2
+      contradiction: "美元剧烈波动——全球资本流动不稳定"
+
+  - name: "油价供给冲击"
+    description: "油价波动幅度极大 = 地缘或供给冲击"
+    conditions:
+      - indicator: oil_yoy_abs
+        percentile_op: ">"
+        percentile_val: 80
+    action:
+      force_id: 3
+      direction_adjustment: -0.2
+      contradiction: "油价大幅波动——可能有地缘冲突或供给中断"
+
+  # ── Force 4: 自然之力 ──
+
+  - name: "食品价格飙升"
+    description: "食品CPI极高 = 供给冲击"
+    conditions:
+      - indicator: food_cpi_yoy
+        percentile_op: ">"
+        percentile_val: 80
+    action:
+      force_id: 4
+      direction_adjustment: -0.3
+      contradiction: "食品价格飙升——可能有旱灾/出口禁令等供给冲击"
+
+  # ── Force 5: 技术 ──
+
+  - name: "生产率突破"
+    description: "生产率增速历史高位 + 改善 = 可能有技术革命"
+    conditions:
+      - indicator: productivity_growth
+        percentile_op: ">"
+        percentile_val: 70
+        trend: improving
+    action:
+      force_id: 5
+      direction_adjustment: 0.3
+      contradiction: "生产率突破趋势——可能有技术革命正在发生"
+
+  - name: "R&D投入加速"
+    description: "R&D支出增速历史高位 = 对未来技术的信心"
+    conditions:
+      - indicator: rd_spending_growth
+        percentile_op: ">"
+        percentile_val: 70
+        trend: improving
+    action:
+      force_id: 5
+      direction_adjustment: 0.2
+      contradiction: "R&D投入加速——反映对技术前景的信心"

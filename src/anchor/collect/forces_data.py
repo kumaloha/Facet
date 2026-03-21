@@ -1,11 +1,12 @@
 """
-FRED → 五大力量数据映射
-========================
+五大力量数据采集
+================
 
-直接从 FRED 拉取最新值，按五大力量分组，
+从外部数据源拉取最新值，按五大力量分组，
 返回 dalio_forces.py 各 assess_force*() 期望的 dict 格式。
 
 不经过数据库，适合实时分析。
+当前数据源: FRED。未来可扩展其他来源。
 """
 
 from __future__ import annotations
@@ -41,6 +42,9 @@ _FORCE1_SERIES = {
     # 影子银行代理信号
     ("SOFR", "sofr_rate", "direct"),                     # 担保隔夜融资利率 (影子银行融资成本)
     ("RRPONTSYD", "reverse_repo", "direct"),             # 逆回购余额 (十亿$, 流动性方向)
+    # 企业偿付能力 (通用泡沫检测: 利润增速<债务增速 = 明斯基时刻积累)
+    ("A053RC1Q027SBEA", "corporate_profits", "direct"),  # 税前企业利润 (季度, 十亿$)
+    ("BCNSDODNS", "corporate_debt", "direct"),           # 非金融企业债务总额 (季度, 十亿$)
 }
 
 # Force 2: 内部秩序
@@ -62,11 +66,19 @@ _FORCE3_SERIES = {
     ("DTWEXBGS", "dollar_index_yoy", "yoy_index"),         # 美元指数 → 同比%
     ("DCOILWTICO", "oil_price_yoy", "yoy_index"),          # WTI → 同比%
     ("USEPUINDXD", "epu_index", "direct"),                 # 经济政策不确定性指数 (日度)
+    # 贸易武器化检测: 关税率↑ + 出口↓ = 贸易战在咬合
+    ("B235RC1Q027SBEA", "customs_duties", "direct"),       # 关税收入 (季度, 十亿$)
+    ("A255RC1Q027SBEA", "imports_goods", "direct"),        # 商品进口额 (季度, 十亿$) — 关税率分母
+    ("IEAMGSN", "export_growth", "yoy_level"),             # 月度商品出口额 → 同比%
+    # 美元霸权挑战: 外国抛售美债 = 去美元化信号
+    ("FDHBFIN", "foreign_treasury_holdings", "direct"),    # 外国持有美国国债 (月度, 十亿$)
 }
 
 # Force 4: 自然之力（FRED 部分，其余来自 nature.py）
 _FORCE4_SERIES = {
     ("CPIUFDSL", "food_price_yoy", "yoy_index"),         # 食品CPI → 同比%
+    # 物理活动中断检测: 突然下跌 = 供应链/自然灾害中断
+    ("RAILFRTCARLOADSD11", "rail_carloads", "direct"),    # 周度铁路货运量 (千车)
 }
 
 # Force 5: 人类创造力/技术
@@ -74,6 +86,8 @@ _FORCE5_SERIES = {
     ("OPHNFB", "productivity_growth", "yoy_index"),        # 非农生产率 → 同比%
     ("Y694RC1Q027SBEA", "rd_spending_growth", "yoy_index"), # R&D支出 → 同比%
     ("NASDAQCOM", "nasdaq_yoy", "yoy_index"),              # NASDAQ综合 → 同比% (科技板块代理)
+    # 结构性转型: 信息产业GDP占比上升 = 真革命，不升 = 泡沫
+    ("VAPGDPI", "info_sector_gdp_share", "direct"),        # 信息产业增加值/GDP (季度, %)
 }
 
 # ── 索罗斯: 衍生品 + 市场信念信号 (跨 Force, 单独分组) ──
@@ -85,6 +99,8 @@ _SOROS_SERIES = {
     ("BAMLH0A0HYM2", "credit_spread_hy", "direct"),       # 高收益信用利差
     ("T5YIE", "breakeven_5y", "direct"),                   # 5年通胀预期
     ("T10YIE", "breakeven_10y", "direct"),                 # 10年通胀预期
+    # 收益率曲线: 倒挂 = 衰退最经典预测器
+    ("T10Y3M", "yield_curve_10y_3m", "direct"),           # 10Y-3M利差 (日度, %)
     # 人口 (大周期结构参数)
     ("LFWA64TTUSM647S", "working_age_pop", "yoy_level"),   # 劳动年龄人口同比% (极慢)
 }
